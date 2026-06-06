@@ -25,18 +25,18 @@ Full rationale for every decision (D1–D8): **§12**.
 
 | Brief requirement | Section | Brief requirement | Section |
 |---|---|---|---|
-| Functional / non-functional reqs | §2 | APIs & data models | §8 |
-| High-level architecture | §4 | Scalability & reliability | §9 |
-| Auth (authN/authZ) flow | §5 | Security & compliance | §10 |
-| Multi-tenant isolation | §6 | Operational concerns | §11 |
-| Access control model | §3 | Assumptions/tradeoffs/justification | §2.3, §12 |
-| Service-to-service security | §7 | Dynamic role mgmt · Audit | §3.4, §10 |
-| Attribute ownership (PIP) | §3.5–3.6 | Governance · Multi-region · Audit · Attr-sourcing · Q&A | App. A/B/C/D/E |
-| Data & storage architecture | §8.3–8.9 | Capacity · Event correctness · Migration | App. F |
+| Functional / non-functional reqs | [§2](#s2) | APIs & data models | [§8](#s8) |
+| High-level architecture | [§4](#s4) | Scalability & reliability | [§9](#s9) |
+| Auth (authN/authZ) flow | [§5](#s5) | Security & compliance | [§10](#s10) |
+| Multi-tenant isolation | [§6](#s6) | Operational concerns | [§11](#s11) |
+| Access control model | [§3](#s3) | Assumptions/tradeoffs/justification | [§2.3](#s2-3), [§12](#s12) |
+| Service-to-service security | [§7](#s7) | Dynamic role mgmt · Audit | [§3.4](#s3-4), [§10](#s10) |
+| Attribute ownership (PIP) | [§3.5–3.6](#s3-5) | Governance · Multi-region · Audit · Attr-sourcing · Q&A | [A](#app-a)/[B](#app-b)/[C](#app-c)/[D](#app-d)/[E](#app-e) |
+| Data & storage architecture | [§8.3–8.9](#s8-3) | Capacity · Event correctness · Migration | [App. F](#app-f) |
 
 ---
 
-## 2. Requirements, NFRs & Assumptions
+## 2. Requirements, NFRs & Assumptions <a id="s2"></a>
 
 ### 2.1 Functional requirements
 
@@ -69,7 +69,7 @@ Full rationale for every decision (D1–D8): **§12**.
 | Tenant isolation | zero cross-tenant access | existential for fintech |
 | Audit | no decision lost; immutable | SOC 2 / regulatory |
 
-### 2.3 Assumptions & scope
+### 2.3 Assumptions & scope <a id="s2-3"></a>
 
 **Assumptions** *(each is a discussion point)*
 1. Identity is **federated, not owned** — tenants bring Okta/AD/Azure AD.
@@ -82,7 +82,7 @@ Full rationale for every decision (D1–D8): **§12**.
 
 ---
 
-## 3. Access Control Model
+## 3. Access Control Model <a id="s3"></a>
 
 **Hybrid (RBAC + ABAC) with hierarchical scopes** — no mature enterprise uses a pure model; they layer roles with attribute conditions.
 
@@ -138,7 +138,7 @@ resourcePolicy:
 
 *Switch to OpenFGA if Assumption #4 breaks (deep relationship graphs). Caveat: no head-to-head benchmarks survived verification; Oso/Casbin not independently verified.*
 
-### 3.4 Dynamic management (FR-8)
+### 3.4 Dynamic management (FR-8) <a id="s3-4"></a>
 
 Two change types, two channels — both effective in seconds, no redeploy, no waiting on token expiry:
 - **Assignment change** (data) → PAP emits event → **PIP cache invalidated** → next check fetches fresh roles.
@@ -156,7 +156,7 @@ sequenceDiagram
     BUS->>PIP: invalidate(Riya) → next check = DENY
 ```
 
-### 3.5 Attribute ownership & the PIP (where `principal.department` lives)
+### 3.5 Attribute ownership & the PIP (where `principal.department` lives) <a id="s3-5"></a>
 
 ABAC is only as correct as its attributes, so ownership is explicit — each attribute has **one source-of-truth service**; the PIP is a *read-through cache*, never the owner.
 
@@ -183,7 +183,7 @@ Net: the hot path stays **PEP (resource in hand) + PIP (local) + PDP (local)**; 
 
 ---
 
-## 4. High-Level Architecture
+## 4. High-Level Architecture <a id="s4"></a>
 
 Two planes: a **control plane** (manage authz — slow, strongly consistent, low-QPS) and a **data plane** (evaluate authz — fast, eventually-consistent, high-QPS). **Every business service has the same shape:** app + [PEP](#g-pep) + a co-located [PDP](#g-pdp) + its own tenant-scoped DB.
 
@@ -261,7 +261,7 @@ graph LR
 
 ---
 
-## 5. Authentication & Authorization Flow
+## 5. Authentication & Authorization Flow <a id="s5"></a>
 
 **LDAP/AD is *not* the core.** AuthN ("who are you") is LDAP's job; AuthZ ("what may you do") is ours. A tenant's directory is a **federated identity source** (OIDC/SAML/SCIM); authorization stays in our system. *(D7)*
 
@@ -293,7 +293,7 @@ Deny path is identical; PDP returns `DENY`+reason → PEP returns `403`, still a
 
 ---
 
-## 6. Multi-Tenant Isolation
+## 6. Multi-Tenant Isolation <a id="s6"></a>
 
 **Three layers, never one check:**
 
@@ -317,7 +317,7 @@ graph LR
 
 ---
 
-## 7. Service-to-Service Security
+## 7. Service-to-Service Security <a id="s7"></a>
 
 Two identities travel on every internal call; the callee **re-authorizes** rather than trusting the caller. *(D6)*
 
@@ -335,7 +335,7 @@ sequenceDiagram
 
 ---
 
-## 8. APIs, Data & Storage Models
+## 8. APIs, Data & Storage Models <a id="s8"></a>
 
 ```mermaid
 erDiagram
@@ -450,7 +450,7 @@ GET /expenses?status=pending&limit=20&cursor=eyJ…    Authorization: Bearer <ri
         "nextCursor":"eyJ…" }
 ```
 
-### 8.3 Database choice — why PostgreSQL
+### 8.3 Database choice — why PostgreSQL <a id="s8-3"></a>
 
 The authz source of truth and financial data demand **ACID + strong consistency** (a permission read that's wrong is a security hole; money must not be eventually consistent). PostgreSQL, **one DB per service**:
 
@@ -512,7 +512,7 @@ Per cluster: **primary + synchronous standby** (RPO ≈ 0 for the authz/financia
 
 ---
 
-## 9. Scalability & Reliability
+## 9. Scalability & Reliability <a id="s9"></a>
 
 - **Distributed PDP** (sidecar over loopback) → no central bottleneck; identical policy → identical decisions. Turns ~37k peak checks/s into a local sub-ms op. *(D3)*
 - **PIP caching** of principal attrs, event-invalidated (staleness < 5 s) — removes a per-request network lookup.
@@ -557,7 +557,7 @@ Designed in **Appendix B** (regional PDP/PIP replicas, tenant home-region pinnin
 
 ---
 
-## 10. Security & Compliance
+## 10. Security & Compliance <a id="s10"></a>
 
 **STRIDE (authz path):**
 
@@ -587,7 +587,7 @@ Both are append-only, hash-chained (tamper-evident), tenant-scoped, linked by `t
 
 ---
 
-## 11. Operational Concerns
+## 11. Operational Concerns <a id="s11"></a>
 
 | Concern | Approach |
 |---|---|
@@ -599,7 +599,7 @@ Both are append-only, hash-chained (tamper-evident), tenant-scoped, linked by `t
 
 ---
 
-## 12. Tradeoffs & Decisions (rationale lives here)
+## 12. Tradeoffs & Decisions (rationale lives here) <a id="s12"></a>
 
 | # | Decision | Chosen | Rejected | Why |
 |---|---|---|---|---|
@@ -676,7 +676,7 @@ Multi-tenancy, data & operations:
 
 ---
 
-## Appendix A — Enterprise Governance & Advanced Patterns
+## Appendix A — Enterprise Governance & Advanced Patterns <a id="app-a"></a>
 
 All expressible in the chosen model (Cerbos CEL conditions + derived roles); kept here so the core stays lean.
 
@@ -688,7 +688,7 @@ All expressible in the chosen model (Cerbos CEL conditions + derived roles); kep
 | **Time-based** | approve only during business hours | CEL on request time: `now.getHours() >= 9 && now.getHours() < 18` |
 | **Bulk evaluation** | UI "what can this user do?" / "which rows?" | `/pdp/v1/check` with multiple actions; **`PlanResources`** (Cerbos query plan) / OpenFGA `ListObjects` for "which resources" |
 
-## Appendix B — Multi-Region & Disaster Recovery
+## Appendix B — Multi-Region & Disaster Recovery <a id="app-b"></a>
 
 99.99% + 10M users implies more than one region; designed now, implementation deferred from v1.
 
@@ -698,7 +698,7 @@ All expressible in the chosen model (Cerbos CEL conditions + derived roles); kep
 - **DR:** RPO/RTO targets per data class; **audit replicated cross-region** (it's the compliance system of record); failover promotes a regional replica.
 - **Consistency:** cross-region propagation widens the staleness window — acceptable because the **hard TTL + fail-closed** rule (§9.1) still holds per region.
 
-## Appendix C — Audit Architecture (detail)
+## Appendix C — Audit Architecture (detail) <a id="app-c"></a>
 
 | Concern | Design |
 |---|---|
@@ -709,7 +709,7 @@ All expressible in the chosen model (Cerbos CEL conditions + derived roles); kep
 | **GDPR vs immutability** | the conflict (erasure vs an immutable log) resolved by storing **PII by reference (tokenized)**, never raw payloads; a GDPR erasure **crypto-shreds** the referenced PII (delete the key) while the tamper-evident audit record itself stays intact |
 | **What's logged (tiered)** | **always:** all DENY, all admin/PAP changes, all break-glass, all ALLOW on money-movement classes · **sampled+adaptive:** low-risk ALLOWs (~1%, full-capture on deny-spike). All carry deciding rule + `decisionId`, linked by `trace-id` |
 
-## Appendix D — Attribute Sourcing & Freshness (the hardest part)
+## Appendix D — Attribute Sourcing & Freshness (the hardest part) <a id="app-d"></a>
 
 The biggest architectural risk: authorization quietly becomes a **data-integration problem**. How we contain it.
 
@@ -753,7 +753,7 @@ RLS guards OLTP; warehouses/ETL/BI bypass it. Controls: `tenant_id` propagated i
 ### D.5 When this model breaks → ReBAC
 If attributes become **deeply relational** (manager-of-manager-of-owner, recursive folder sharing), precomputing denormalized attributes gets expensive — that's the **OpenFGA/ReBAC pivot** (Assumption #4, D2).
 
-## Appendix E — Architecture-Review Q&A
+## Appendix E — Architecture-Review Q&A <a id="app-e"></a>
 
 Direct answers to the hard questions a staff reviewer asks.
 
@@ -769,7 +769,7 @@ Direct answers to the hard questions a staff reviewer asks.
 
 **Q6 · Stop audit becoming petabytes?** Tiered logging: always-log DENY + admin + break-glass + sensitive-class ALLOW; **sample low-risk ALLOWs (~1%) with adaptive full-capture on deny-spikes** (§10, App. C).
 
-## Appendix F — Capacity Model, Event Correctness & Migration
+## Appendix F — Capacity Model, Event Correctness & Migration <a id="app-f"></a>
 
 ### F.1 Rough sizing (proving the numbers)
 - **Authz checks:** 37k/s peak, evaluated **locally** (sidecar); Cerbos ~sub-ms, low CPU → each pod's PDP serves its pod's RPS; there is **no central authz QPS** to bottleneck.
