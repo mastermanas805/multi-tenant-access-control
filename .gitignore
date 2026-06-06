@@ -1,0 +1,22 @@
+# Local Claude config / skills
+.claude/
+
+# Original assignment materials — excluded from the public repo
+*.pdf
+problemstatement.txt
+
+# Node / build
+node_modules/
+dist/
+build/
+coverage/
+*.log
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
