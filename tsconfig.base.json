@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2022",
+    // `nodenext` is the modern, non-deprecated resolution (the legacy `node`/
+    // `node10` is removed in TS 7.0). With no `"type": "module"` in package.json
+    // these files are classified as CommonJS, so emit stays CJS (NestJS /
+    // ts-node-commonjs / ts-jest) and relative imports need no `.js` extension.
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "lib": ["ES2022"],
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "composite": true,
+    "incremental": true,
+    "removeComments": false,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "skipLibCheck": true,
+    // Required by single-file transpilers (ts-jest / ts-node-dev) under the
+    // hybrid `nodenext` module kind; also a safe modern default (no const-enums
+    // are used cross-file).
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "exactOptionalPropertyTypes": false,
+
+    // No `baseUrl` (deprecated reliance): TS 5.x resolves these `paths` relative
+    // to THIS config file's directory (the repo root), so the aliases keep
+    // working without it.
+    "paths": {
+      "@kernel": ["./packages/kernel/src/index.ts"],
+      "@kernel/*": ["./packages/kernel/src/*"],
+      "@app/*": ["./apps/authz-admin/src/*"]
+    }
+  },
+  "exclude": ["node_modules", "dist", "build", "coverage"]
+}

@@ -1,0 +1,11 @@
+/** @type {import('ts-jest').JestConfigWithTsJest} */
+module.exports = {
+  preset: 'ts-jest',
+  testEnvironment: 'node',
+  rootDir: 'src',
+  testRegex: '.*\\.spec\\.ts$',
+  moduleNameMapper: {
+    '^@kernel$': '<rootDir>/index.ts',
+    '^@kernel/(.*)$': '<rootDir>/$1',
+  },
+};

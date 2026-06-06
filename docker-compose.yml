@@ -1,0 +1,64 @@
+# Local demo stack for the Authorization Admin (PAP) service.
+#
+#   docker compose up -d --build           # start Postgres + the API
+#   docker compose run --rm authz-admin pnpm migration:run   # create schema + RLS
+#   docker compose run --rm authz-admin pnpm seed            # load demo data
+#   open http://localhost:3000/docs        # OpenAPI / Swagger
+#
+# The build context is the MONOREPO ROOT so the pnpm workspace is available to
+# the multi-stage Dockerfile.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: authz-postgres
+    environment:
+      POSTGRES_USER: authz
+      POSTGRES_PASSWORD: authz
+      POSTGRES_DB: authz_admin
+    ports:
+      - '5432:5432'
+    volumes:
+      - authz-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U authz -d authz_admin']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  authz-admin:
+    build:
+      context: .
+      dockerfile: apps/authz-admin/Dockerfile
+    container_name: authz-admin
+    working_dir: /app/apps/authz-admin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      LOG_LEVEL: info
+      DB_ENABLED: 'true'
+      DB_HOST: postgres
+      DB_PORT: '5432'
+      # The APP connects as the non-superuser role provisioned by the migration.
+      # RLS / FORCE ROW LEVEL SECURITY is only enforced against a NOBYPASSRLS
+      # role — the privileged `authz` superuser would bypass it. Run the
+      # migration + seed as `authz` (DB_USERNAME=authz), then the long-running
+      # API as `authz_app` (set here).
+      DB_USERNAME: authz_app
+      DB_PASSWORD: authz_app
+      DB_DATABASE: authz_admin
+      DB_SYNCHRONIZE: 'false'
+      # Used only when this service runs `pnpm migration:run` / `pnpm seed`
+      # (it can switch to the bootstrap superuser via these — see README).
+      DB_APP_USERNAME: authz_app
+      DB_APP_PASSWORD: authz_app
+    ports:
+      - '3000:3000'
+    restart: unless-stopped
+
+volumes:
+  authz-pgdata:
