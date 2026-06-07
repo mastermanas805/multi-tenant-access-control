@@ -46,12 +46,16 @@ Defaults (override via `SEED_USERS` JSON). Password for all three is
 
 ## Quick start (Docker)
 
-From the **repository root**:
+From the **repository root**. Identity is stateless and DB-free, so it needs no
+migration/seed — it comes up with `docker compose`:
 
 ```bash
 docker compose up -d --build identity
-open http://localhost:3100/docs
+open http://localhost:3200/docs        # Swagger (identity listens on :3200)
 ```
+
+For the full stack + the end-to-end demo (log in here, then call the gateway/PEP),
+see **[RUNNING.md](../../RUNNING.md)**.
 
 ## Running on the host
 

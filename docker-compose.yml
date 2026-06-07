@@ -59,7 +59,6 @@ services:
       context: .
       dockerfile: apps/authz-admin/Dockerfile
     container_name: authz-admin
-    working_dir: /app/apps/authz-admin
     depends_on:
       postgres:
         condition: service_healthy
@@ -113,7 +112,6 @@ services:
       context: .
       dockerfile: apps/audit/Dockerfile
     container_name: audit
-    working_dir: /app/apps/audit
     depends_on:
       postgres:
         condition: service_healthy
@@ -147,7 +145,6 @@ services:
       context: .
       dockerfile: apps/expense/Dockerfile
     container_name: expense
-    working_dir: /app/apps/expense
     depends_on:
       postgres:
         condition: service_healthy
@@ -196,7 +193,6 @@ services:
       context: .
       dockerfile: apps/identity/Dockerfile
     container_name: identity
-    working_dir: /app/apps/identity
     environment:
       NODE_ENV: production
       PORT: '3200'
@@ -204,6 +200,12 @@ services:
       IDENTITY_ISSUER: http://localhost:3200
       IDENTITY_AUDIENCE: authz-platform
       JWT_SIGNING_KID: dev-rsa-2026
+      # Production identity refuses to boot without an EXPLICITLY injected keypair
+      # (fail-closed: never silently sign prod tokens with the repo-known dev key).
+      # This demo deliberately points at the committed dev keypair baked into the
+      # image; a real deployment swaps these for its own private/public PEM paths.
+      JWT_PRIVATE_KEY_PATH: /app/apps/identity/keys/dev-private.pem
+      JWT_PUBLIC_KEY_PATH: /app/apps/identity/keys/dev-public.pem
       ACCESS_TOKEN_TTL_SECONDS: '900'
       REFRESH_TOKEN_TTL_SECONDS: '2592000'
       # Demo users seeded with the Acme tenant UUID as `tid` (the downstream PEPs
@@ -233,7 +235,6 @@ services:
       context: .
       dockerfile: apps/gateway/Dockerfile
     container_name: gateway
-    working_dir: /app/apps/gateway
     depends_on:
       # The gateway fetches the JWKS from identity and routes /auth/* to it.
       identity:
@@ -252,8 +253,10 @@ services:
       IDENTITY_AUDIENCE: authz-platform
       JWKS_CACHE_TTL_SECONDS: '300'
       JWT_CLOCK_TOLERANCE_SECONDS: '60'
-      # Signed internal identity token (DEV secret — production MUST override, §7).
-      INTERNAL_TOKEN_SECRET: dev-internal-token-secret-change-me
+      # Signed internal identity token. Production refuses to boot with the
+      # committed dev secret ('dev-internal-token-secret-change-me'), so this demo
+      # sets a distinct local-only secret; a real deployment injects its own.
+      INTERNAL_TOKEN_SECRET: local-demo-internal-token-secret-not-for-prod
       INTERNAL_TOKEN_KID: gw-internal-2026
       INTERNAL_TOKEN_ISSUER: api-gateway
       INTERNAL_TOKEN_TTL_SECONDS: '120'

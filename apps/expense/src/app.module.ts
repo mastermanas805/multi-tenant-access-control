@@ -1,4 +1,4 @@
-import { type MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
+import { type MiddlewareConsumer, Module, type NestModule, RequestMethod } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 
 import { AuthzModule, IdentityContextMiddleware } from '@authz/pep';
@@ -58,6 +58,15 @@ import { SharedModule } from './shared/shared.module';
 })
 export class AppModule implements NestModule {
   public configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(RequestContextMiddleware, IdentityContextMiddleware).forRoutes('*');
+    // RequestContextMiddleware (trace id) runs everywhere. The
+    // IdentityContextMiddleware requires the internal identity token, so it must
+    // NOT gate the version-neutral, UNAUTHENTICATED liveness/readiness probe at
+    // `/health` (orchestrators have no token) — exclude it (DESIGN §8: health is
+    // version-neutral + public). All /v1/* business routes still run behind it.
+    consumer.apply(RequestContextMiddleware).forRoutes('*');
+    consumer
+      .apply(IdentityContextMiddleware)
+      .exclude({ path: 'health', method: RequestMethod.ALL })
+      .forRoutes('*');
   }
 }

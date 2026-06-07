@@ -51,17 +51,19 @@ the tx and re-links the record to it, so two concurrent appends can never both
 link to the same head. The loser retries against the new head; the unique index
 on `record_hash` is a final backstop.
 
-## Quick start (Docker)
+## Quick start (full stack)
 
-From the **repository root** (the `audit` service + its own `audit` database are
-in `docker-compose.yml`; the DB is created by `deploy/postgres/init`):
+From the **repository root** (the `audit` service + its own `audit` database are in
+`docker-compose.yml`; the DB is created by `deploy/postgres/init`, and the migration
+is run by the one-command bootstrap):
 
 ```bash
-docker compose up -d --build                       # Postgres + services
-docker compose run --rm audit pnpm migration:run   # create audit_events + trigger
+docker compose up -d --build      # postgres, cerbos, identity, authz-admin, audit, expense, gateway
+./scripts/bootstrap.sh            # migrate all DBs (incl. audit_events + trigger) + seed + publish policy
 open http://localhost:3100/docs
 ```
 
+See **[RUNNING.md](../../RUNNING.md)** for the end-to-end demo and troubleshooting.
 Health probe: `curl http://localhost:3100/health`.
 
 ```bash

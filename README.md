@@ -3,6 +3,7 @@
 Enterprise-grade **authorization system** design for a multi-tenant, microservices-based SaaS platform — thousands of tenants, millions of users, high request throughput.
 
 > 📄 **Full design document: [DESIGN.md](./DESIGN.md)**
+> 🚀 **Run it locally: [RUNNING.md](./RUNNING.md)** — `docker compose up` → `./scripts/bootstrap.sh` → demo.
 
 ## What this is
 
@@ -25,11 +26,20 @@ Rationale for each lives in the design doc's **Tradeoffs & Decisions** table.
 ## Status
 
 - ✅ **Design document** — complete ([DESIGN.md](./DESIGN.md))
-- 🚧 **Reference implementation** — in progress (Node.js / TypeScript, NestJS, Cerbos)
+- ✅ **Reference implementation** — runnable end-to-end (Node.js / TypeScript, NestJS, Cerbos, PostgreSQL + RLS)
 
-## Planned reference implementation
+## Reference implementation
 
-A focused slice demonstrating the model end-to-end (depth over breadth): API Gateway · Identity · Authorization Admin (PAP) · Expense service (PEP → Cerbos sidecar) · Audit · PostgreSQL + RLS · a minimal demo UI · `docker-compose` + seed data. The canonical access-control cases ship as executable tests.
+A focused slice demonstrating the model end-to-end (depth over breadth):
+**API Gateway** (authN edge) · **Identity** (OIDC-style IdP) · **Authorization Admin**
+(PAP — publishes policies to Cerbos, serves the PIP) · **Expense** service (PEP →
+co-located Cerbos PDP) · **Audit** (tamper-evident hash chain) · **PostgreSQL** per
+service with **Row-Level Security** · `docker-compose` + a one-command bootstrap.
+
+The canonical access-control cases ship as **executable integration tests** that run
+against **real Postgres + real Cerbos** (Testcontainers) — see
+[RUNNING.md](./RUNNING.md) to bring the stack up and run the demo, and
+`pnpm -w run test:integration` for the end-to-end suite.
 
 ## Tech stack
 

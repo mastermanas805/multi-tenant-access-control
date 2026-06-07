@@ -2,6 +2,7 @@ import 'reflect-metadata';
 
 import { createServer, type Server } from 'node:http';
 import { type AddressInfo } from 'node:net';
+import { join } from 'node:path';
 
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
@@ -24,6 +25,14 @@ export const GATEWAY_DEMO_USER = {
 
 const ISSUER = 'http://localhost:3200';
 const AUDIENCE = 'authz-platform';
+
+// The committed dev keypair. Identity now refuses to boot under NODE_ENV=production
+// without an explicitly injected keypair (fail-closed against signing prod tokens
+// with the repo-known dev key); this suite mirrors a prod deploy that injects keys
+// by pointing at the dev keypair on disk, so the JWTs are still real RS256 tokens.
+const IDENTITY_KEYS_DIR = join(__dirname, '..', '..', '..', '..', 'apps', 'identity', 'keys');
+const DEV_PRIVATE_KEY_PATH = join(IDENTITY_KEYS_DIR, 'dev-private.pem');
+const DEV_PUBLIC_KEY_PATH = join(IDENTITY_KEYS_DIR, 'dev-public.pem');
 
 /** What the echo upstream captured from the gateway's forwarded request. */
 export interface EchoCapture {
@@ -111,6 +120,10 @@ export async function startGatewayStack(): Promise<GatewayStack> {
     LOG_LEVEL: 'error',
     IDENTITY_ISSUER: ISSUER,
     IDENTITY_AUDIENCE: AUDIENCE,
+    // Production identity refuses the committed dev fallback; inject the keypair
+    // explicitly (here the dev keys on disk) the way a real prod deploy would.
+    JWT_PRIVATE_KEY_PATH: DEV_PRIVATE_KEY_PATH,
+    JWT_PUBLIC_KEY_PATH: DEV_PUBLIC_KEY_PATH,
     ACCESS_TOKEN_TTL_SECONDS: '900',
     REFRESH_TOKEN_TTL_SECONDS: '2592000',
     SEED_USERS: JSON.stringify([

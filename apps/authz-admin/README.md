@@ -17,31 +17,21 @@ one module per aggregate, all replicating the `tenant` reference module:
 | `role-assignment`| `role_assignments`  | yes (RLS)      | `POST /role-assignments`, revoke, list-for-user              |
 | `policy`         | `policies`          | yes (RLS)      | `POST /policies` (publish), activate, rollback               |
 
-## Quick start (Docker)
+## Quick start (full stack)
 
-From the **repository root**:
+From the **repository root** — the PAP is brought up as part of the whole stack and
+its schema/seed are provisioned by the one-command bootstrap:
 
 ```bash
-# 1. Start Postgres 16 + the API (multi-stage Docker build).
-docker compose up -d --build
-
-# 2. Create the schema, indexes, and RLS policies (run as the bootstrap
-#    superuser; this also provisions the non-superuser `authz_app` role the API
-#    connects as).
-docker compose run --rm -e DB_USERNAME=authz -e DB_PASSWORD=authz \
-  authz-admin pnpm migration:run
-
-# 3. Load demo data (Acme/Globex, org units, permissions, roles, assignments).
-docker compose run --rm -e DB_USERNAME=authz -e DB_PASSWORD=authz \
-  authz-admin pnpm seed
-
-# 4. Restart the API so it connects now that the schema + app role exist.
-docker compose restart authz-admin
-
-# 5. Open the API docs.
-open http://localhost:3000/docs        # OpenAPI / Swagger UI
+docker compose up -d --build      # postgres, cerbos, identity, authz-admin, audit, expense, gateway
+./scripts/bootstrap.sh            # migrate + seed all DBs + publish the demo policy
+open http://localhost:3000/docs   # OpenAPI / Swagger UI
 ```
 
+See **[RUNNING.md](../../RUNNING.md)** for the end-to-end demo and troubleshooting.
+The bootstrap runs the migrations + seeds from the host (the slim runtime image is
+production-only) as the bootstrap superuser — this also provisions the non-superuser
+`authz_app` role + RLS the API connects as, so the API self-recovers once it has run.
 Health probe: `curl http://localhost:3000/health`.
 
 ### Why two database roles?

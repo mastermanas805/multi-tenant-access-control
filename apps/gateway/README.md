@@ -71,14 +71,17 @@ is covered by both unit and e2e tests.
 
 ## Quick start (Docker)
 
-From the **repository root**:
+From the **repository root**. The gateway depends on `identity`, `authz-admin` and
+`expense`, so it is exercised as part of the whole stack:
 
 ```bash
-docker compose up -d --build gateway
+docker compose up -d --build      # whole stack
+./scripts/bootstrap.sh            # migrate + seed + publish the demo policy
 open http://localhost:8080/docs
 ```
 
-The gateway depends on `identity`, `authz-admin` and `expense`.
+The gateway is stateless and DB-free (no migration of its own). For the end-to-end
+demo through the gateway (login → ALLOW/DENY → audit), see **[RUNNING.md](../../RUNNING.md)**.
 
 ## Running on the host
 

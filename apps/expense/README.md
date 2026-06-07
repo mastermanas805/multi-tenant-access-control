@@ -40,33 +40,22 @@ only the ALLOWs, auditing each decision. (Cerbos `PlanResources` would push the
 filter into SQL; the shared PDP client wraps `checkResource` today, so we filter
 post-load behind the use-case — a drop-in optimization point.)
 
-## Quick start (Docker)
+## Quick start (full stack)
 
-From the **repository root**. The Expense service depends on the PAP (PIP source),
-Cerbos (PDP), and the Audit service, so bring the whole stack up:
+The Expense PEP depends on the PAP (PIP source), Cerbos (PDP) and the Audit service,
+so it is exercised as part of the whole stack. From the **repository root**:
 
 ```bash
-# 1. Start Postgres + Cerbos + the PAP + Audit + the Expense API.
-docker compose up -d --build
-
-# 2. Create the PAP schema + demo data (so the PIP can resolve principals).
-docker compose run --rm -e DB_USERNAME=authz -e DB_PASSWORD=authz authz-admin pnpm migration:run
-docker compose run --rm -e DB_USERNAME=authz -e DB_PASSWORD=authz authz-admin pnpm seed
-
-# 3. Create the Expense schema + RLS + the unprivileged `expense_app` role, then
-#    load the demo expenses. Run as the bootstrap superuser (`authz`) against the
-#    `expense` database.
-docker compose run --rm -e DB_USERNAME=authz -e DB_PASSWORD=authz expense pnpm migration:run
-docker compose run --rm -e DB_USERNAME=authz -e DB_PASSWORD=authz expense pnpm seed
-
-# 4. Restart the API so it connects now that the schema + app role exist.
-docker compose restart expense
-
-# 5. Open the API docs.
-open http://localhost:3300/docs        # OpenAPI / Swagger UI
+docker compose up -d --build      # postgres, cerbos, identity, authz-admin, audit, expense, gateway
+./scripts/bootstrap.sh            # migrate + seed all DBs + publish the demo policy
+open http://localhost:3300/docs   # OpenAPI / Swagger UI
 ```
 
-Health probe: `curl http://localhost:3300/health`.
+See **[RUNNING.md](../../RUNNING.md)** for the end-to-end demo (the canonical §11
+flows through the gateway) and troubleshooting. The bootstrap runs the migrations +
+seeds from the host (the slim runtime image is production-only); it provisions the
+unprivileged `expense_app` role + RLS the long-running API connects as, so the API
+self-recovers once it has run. Health probe: `curl http://localhost:3300/health`.
 
 ### Why two database roles?
 

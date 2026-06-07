@@ -45,7 +45,16 @@ export const configSchema = z.object({
 
 export type AppConfig = z.infer<typeof configSchema>;
 
-/** Validates raw env into a typed AppConfig. Throws on the first error. */
+/**
+ * Validates raw env into a typed AppConfig. Throws on the first error.
+ *
+ * Fail-closed production guard (mirrors the RLS superuser boot assertion in
+ * data-source.ts): a production deployment MUST explicitly supply the runtime DB
+ * credentials. If DB_USERNAME/DB_PASSWORD are unset in production the schema
+ * would silently fall back to the shipped `authz_app`/`authz_app` defaults, so a
+ * prod instance that forgets to inject credentials would start with repo-known
+ * passwords. Refuse to boot rather than ship with default creds.
+ */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const parsed = configSchema.safeParse(env);
   if (!parsed.success) {
@@ -54,5 +63,29 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       .join('\n');
     throw new Error(`Invalid environment configuration:\n${issues}`);
   }
+  assertProductionDbCredentials(parsed.data, env);
   return parsed.data;
+}
+
+/**
+ * Refuses to boot when NODE_ENV=production and DB is enabled but the runtime DB
+ * credentials were NOT explicitly provided (so the shipped defaults would apply).
+ * Presence is checked against the RAW env so an operator who deliberately sets the
+ * value (even to the same string) is allowed — only the silent default is rejected.
+ */
+function assertProductionDbCredentials(config: AppConfig, env: NodeJS.ProcessEnv): void {
+  if (config.NODE_ENV !== 'production' || !config.DB_ENABLED) {
+    return;
+  }
+  const missing = (['DB_USERNAME', 'DB_PASSWORD'] as const).filter(
+    (key) => env[key] === undefined || env[key] === '',
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `Invalid environment configuration:\n  - ${missing.join(', ')}: ` +
+        'must be set explicitly in production (refusing to boot with the shipped ' +
+        'default DB credentials). Set DB_USERNAME/DB_PASSWORD to the unprivileged ' +
+        'runtime role provisioned by the migration.',
+    );
+  }
 }

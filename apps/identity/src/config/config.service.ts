@@ -60,6 +60,7 @@ export class ConfigService {
 
   constructor() {
     this.values = loadConfig();
+    this.assertProductionSigningKeys();
     this.privateKeyPem = this.resolvePrivateKey();
     this.publicKeyPem = this.resolvePublicKey();
     this.seedUsers = this.resolveSeedUsers();
@@ -89,6 +90,38 @@ export class ConfigService {
   }
 
   // --- Resolution helpers ----------------------------------------------------
+
+  /**
+   * Fail-closed production guard (mirrors the RLS superuser boot assertion in the
+   * data-stores): the identity service signs every user access token with the
+   * RS256 private key. The committed dev keypair (apps/identity/keys) is published
+   * in the repo, so signing prod tokens with it would let anyone holding the repo
+   * forge a valid JWT for any user/tenant. REFUSES TO BOOT if production does not
+   * inject its OWN private+public key (via JWT_PRIVATE_KEY/_PATH and
+   * JWT_PUBLIC_KEY/_PATH). The dev fallback is kept ONLY for development/test.
+   */
+  private assertProductionSigningKeys(): void {
+    if (!this.isProduction) {
+      return;
+    }
+    const { JWT_PRIVATE_KEY, JWT_PRIVATE_KEY_PATH, JWT_PUBLIC_KEY, JWT_PUBLIC_KEY_PATH } =
+      this.values;
+    const hasPrivate = Boolean(JWT_PRIVATE_KEY ?? JWT_PRIVATE_KEY_PATH);
+    const hasPublic = Boolean(JWT_PUBLIC_KEY ?? JWT_PUBLIC_KEY_PATH);
+    if (hasPrivate && hasPublic) {
+      return;
+    }
+    const missing = [
+      ...(hasPrivate ? [] : ['JWT_PRIVATE_KEY or JWT_PRIVATE_KEY_PATH']),
+      ...(hasPublic ? [] : ['JWT_PUBLIC_KEY or JWT_PUBLIC_KEY_PATH']),
+    ].join(', ');
+    throw new Error(
+      `Signing-key safety check failed: production must supply its own RS256 keypair ` +
+        `(missing ${missing}). Refusing to boot with the committed dev keypair ` +
+        `(apps/identity/keys), which is published in the repo and would let anyone ` +
+        `forge valid JWTs for any user/tenant.`,
+    );
+  }
 
   private resolvePrivateKey(): string {
     const { JWT_PRIVATE_KEY, JWT_PRIVATE_KEY_PATH } = this.values;

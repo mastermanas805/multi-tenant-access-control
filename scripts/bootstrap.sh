@@ -50,13 +50,22 @@ wait_for_http() {
   die "$name did not become ready: $url"
 }
 
-# 1) Readiness ---------------------------------------------------------------
+wait_for_pg() {
+  log "waiting for Postgres ($PG_HOST:$PG_PORT) ..."
+  for _ in $(seq 1 60); do
+    if PGPASSWORD="$PG_SUPER_PASS" pnpm --filter @app/authz-admin exec \
+         node -e "const{Client}=require('pg');const c=new Client({host:'$PG_HOST',port:$PG_PORT,user:'$PG_SUPER_USER',password:'$PG_SUPER_PASS',database:'authz_admin'});c.connect().then(()=>{c.end();process.exit(0)}).catch(()=>process.exit(1))" >/dev/null 2>&1; then
+      log "Postgres is up"; return 0
+    fi
+    sleep 2
+  done
+  die "Postgres did not become ready on $PG_HOST:$PG_PORT"
+}
+
+# 1) Infra readiness ONLY (the OLTP apps fail-closed until their roles exist; they
+#    recover after migrations, so we wait for THEM in step 4, not here).
 wait_for_http "$CERBOS_HTTP_URL/_cerbos/health" "cerbos"
-wait_for_http "http://localhost:3000/health" "authz-admin"
-wait_for_http "http://localhost:3100/health" "audit"
-wait_for_http "http://localhost:3200/health" "identity"
-wait_for_http "http://localhost:3300/health" "expense"
-wait_for_http "$GATEWAY_URL/health" "gateway"
+wait_for_pg
 
 # 2) Migrations (as the bootstrap superuser) ---------------------------------
 run_migration() {
@@ -83,6 +92,14 @@ run_seed() {
 }
 run_seed @app/authz-admin authz_admin
 run_seed @app/expense expense
+
+# 3b) Now the unprivileged roles exist, the OLTP apps recover (restart: unless-
+#     stopped). Wait for every service to report healthy before publishing.
+wait_for_http "http://localhost:3000/health" "authz-admin"
+wait_for_http "http://localhost:3100/health" "audit"
+wait_for_http "http://localhost:3200/health" "identity"
+wait_for_http "http://localhost:3300/health" "expense"
+wait_for_http "$GATEWAY_URL/health" "gateway"
 
 # 4) Publish the demo policy through the PAP (dynamic — NOT pre-baked) --------
 log "publishing the demo expense_report policy through the PAP ..."
@@ -153,11 +170,11 @@ Try the demo (DESIGN §11) — log in at the Identity IdP, then call the gateway
 
   # 2) ALLOW: approve an \$8,500 same-department expense through the gateway -> 200
   curl -sS -X POST $GATEWAY_URL/v1/expenses/exp_42/approve \\
-       -H "authorization: Bearer \$TOKEN" -d '{}'
+       -H "authorization: Bearer \$TOKEN" -H 'content-type: application/json' -d '{}'
 
   # 3) DENY (ABAC amount<10000): approve the \$25,000 expense -> 403 + reason
   curl -sS -X POST $GATEWAY_URL/v1/expenses/exp_99/approve \\
-       -H "authorization: Bearer \$TOKEN" -d '{}'
+       -H "authorization: Bearer \$TOKEN" -H 'content-type: application/json' -d '{}'
 
 See RUNNING.md for the full walk-through (tenant-isolation + dynamic-revocation cases).
 DONE
