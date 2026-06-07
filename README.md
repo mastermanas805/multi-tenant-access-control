@@ -1,6 +1,10 @@
 # Access Control Across Microservices in a Multi-Tenant Architecture
 
+[![CI](https://github.com/mastermanas805/multi-tenant-access-control/actions/workflows/ci.yml/badge.svg)](https://github.com/mastermanas805/multi-tenant-access-control/actions/workflows/ci.yml)
+
 Enterprise-grade **authorization system** design for a multi-tenant, microservices-based SaaS platform — thousands of tenants, millions of users, high request throughput.
+
+> **CI** runs four tiers on every push — typecheck/lint/build, unit, service e2e, **integration (real Postgres + Cerbos via Testcontainers)**, and **Playwright** (full `docker-compose` stack).
 
 > 📄 **Full design document: [DESIGN.md](./DESIGN.md)**
 > 🚀 **Run it locally: [RUNNING.md](./RUNNING.md)** — `docker compose up` → `./scripts/bootstrap.sh` → demo.
