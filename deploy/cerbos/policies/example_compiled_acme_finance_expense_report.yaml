@@ -1,0 +1,62 @@
+# EXAMPLE of a COMPILED TENANT POLICY (DESIGN §3.1) — DEMO/SEED DATA ONLY.
+#
+# ░░ NOT hand-authored platform logic. ░░ This is what the PAP-publish agent
+# EMITS when a tenant admin (Acme's "Dev") publishes a rule via the PAP API: the
+# DB jsonb (PolicyRuleBody) for scope `acme.finance` compiled into a Cerbos
+# resource policy by `compilePolicyToCerbos` (@authz/pep). It is committed here as
+# DEMO data so the PDP has a tenant policy to evaluate out of the box; in a live
+# system the PAP would write/overwrite this file at runtime (DESIGN §3.4, §8.7).
+#
+# It mirrors DESIGN §3.1 verbatim: finance_manager may approve same-department
+# expense_reports under 10,000. It is SCOPED to `acme.finance`, so it inherits the
+# platform base guardrail (tenant isolation) — the DENY there cannot be overridden.
+#
+# Source DB jsonb this was compiled from (Policy.rule):
+#   { "resource": "expense_report",
+#     "rules": [
+#       { "name": "finance_manager_approve",
+#         "actions": ["read","approve"], "effect": "ALLOW",
+#         "roles": ["finance_manager"],
+#         "condition": { "all": [
+#           { "expr": "request.resource.attr.amount < 10000" },
+#           { "expr": "request.resource.attr.department == request.principal.attr.department" } ] } } ] }
+#   (Policy.scope = "acme.finance", Policy.version = 1)
+
+apiVersion: api.cerbos.dev/v1
+metadata:
+  storeIdentifier: expense_report.acme.finance.v1
+  annotations:
+    policyId: pol_demo_acme_finance
+    version: '1'
+    scope: acme.finance
+resourcePolicy:
+  resource: expense_report
+  version: default
+  scope: acme.finance
+  importDerivedRoles:
+    - platform_defaults
+  rules:
+    # Tenant-isolation guardrail, COMPILED INTO every scoped policy (DESIGN §3.1
+    # shows this exact base DENY alongside the tenant rule). Cerbos uses
+    # deny-overrides WITHIN a policy, so this DENY beats the ALLOW below for a
+    # cross-tenant resource even when this scope is the one selected — making the
+    # guardrail authoritative regardless of scope-override semantics (DESIGN §6).
+    - actions: ['*']
+      effect: EFFECT_DENY
+      roles: ['*']
+      name: tenant_isolation_guardrail
+      condition:
+        match:
+          expr: request.resource.attr.tenantId != request.principal.attr.tenantId
+    - actions: ['read', 'approve']
+      effect: EFFECT_ALLOW
+      roles: ['finance_manager']
+      name: finance_manager_approve
+      condition:
+        match:
+          all:
+            of:
+              - expr: request.resource.attr.amount < 10000
+              - expr: >-
+                  request.resource.attr.department ==
+                  request.principal.attr.department

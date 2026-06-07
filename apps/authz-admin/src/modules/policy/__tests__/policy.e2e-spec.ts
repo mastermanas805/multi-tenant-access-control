@@ -67,6 +67,10 @@ describe('Policy module (e2e)', () => {
     // DB disabled so DatabaseModule boots without Postgres and RLS passes through.
     process.env.DB_ENABLED = 'false';
     process.env.NODE_ENV = 'test';
+    // Cerbos publishing off so the use-cases run without touching the filesystem
+    // (the integration toggle — the FS write is covered by the publisher's own
+    // unit test). The compile mapping stays exercised elsewhere.
+    process.env.CERBOS_PUBLISH_ENABLED = 'false';
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [AppModule],

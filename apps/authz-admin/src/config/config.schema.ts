@@ -26,6 +26,21 @@ export const configSchema = z.object({
   DB_PASSWORD: z.string().default('authz_app'),
   DB_DATABASE: z.string().default('authz_admin'),
   DB_SYNCHRONIZE: booleanFromEnv.default(false),
+
+  // --- Cerbos PDP publishing (DESIGN §3.4, §8.7, FR-8) ---
+  // The shared disk-storage directory the Cerbos PDP watches
+  // (`watchForChanges: true`). When the PAP publishes/activates/rolls back a
+  // policy it compiles the DB jsonb into a Cerbos resourcePolicy YAML and writes
+  // it HERE; Cerbos hot-reloads it within seconds — NOTHING is hardcoded. In the
+  // compose topology this is the bind-mount `./deploy/cerbos/policies`.
+  CERBOS_POLICY_DIR: z.string().default('deploy/cerbos/policies'),
+  // Integration toggle: when false the publisher is a no-op (the use-cases run
+  // without touching the filesystem). Unit/e2e suites set this false so they need
+  // no disk; a live deployment leaves it true so publishing is effective.
+  CERBOS_PUBLISH_ENABLED: booleanFromEnv.default(true),
+  // gRPC endpoint of the Cerbos PDP — surfaced for symmetry with the PEP config
+  // and for an operator health/diagnostics view (DESIGN §8.2).
+  CERBOS_URL: z.string().default('localhost:3593'),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;

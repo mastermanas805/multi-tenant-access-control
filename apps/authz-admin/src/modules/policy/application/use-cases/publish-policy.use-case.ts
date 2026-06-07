@@ -10,6 +10,7 @@ import {
 import { Policy } from '../../domain/policy.entity';
 import { type PolicyRepository, POLICY_REPOSITORY } from '../../domain/policy.repository.port';
 import { PolicyScope } from '../../domain/value-objects/policy-scope.vo';
+import { type PolicyPublisher, POLICY_PUBLISHER } from '../ports/policy-publisher.port';
 import { type PublishPolicyCommand } from '../dto/policy.commands';
 import { type PolicyView, toPolicyView } from '../dto/policy.view';
 
@@ -28,6 +29,7 @@ export class PublishPolicyUseCase {
     @Inject(POLICY_REPOSITORY) private readonly policies: PolicyRepository,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(DOMAIN_EVENT_DISPATCHER) private readonly dispatcher: IDomainEventDispatcher,
+    @Inject(POLICY_PUBLISHER) private readonly publisher: PolicyPublisher,
   ) {}
 
   public async execute(command: PublishPolicyCommand): Promise<PolicyView> {
@@ -45,6 +47,13 @@ export class PublishPolicyUseCase {
     });
 
     await this.policies.save(policy);
+
+    // Compile + publish the version to the PDP so it becomes effective within
+    // seconds (DESIGN §3.4). Done AFTER persistence so the source of truth is
+    // committed first; a compile/write error is fail-closed (it throws), keeping
+    // the DB and PDP from silently diverging. Nothing here is hardcoded — the
+    // rule is the runtime, user-authored jsonb.
+    await this.publisher.publish(policy);
 
     // Publish after persistence so the source of truth is committed before any
     // downstream republish/cache-invalidation reacts (DESIGN §3.4 sequence).

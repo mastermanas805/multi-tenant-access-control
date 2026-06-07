@@ -20,8 +20,35 @@ services:
       - '5432:5432'
     volumes:
       - authz-pgdata:/var/lib/postgresql/data
+      # Creates the AUDIT service's separate `audit` database on first init
+      # (DESIGN §8.7 / App. C — the audit log is never in the OLTP DB).
+      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U authz -d authz_admin']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # Cerbos PDP (DESIGN §3.2). Stateless; loads policy YAML from a bind-mounted
+  # dir and hot-reloads on change (watchForChanges). The PAP compiles tenant
+  # rules into this dir at runtime; platform defaults + a demo compiled policy are
+  # seeded there. See deploy/cerbos/README.md.
+  cerbos:
+    image: cerbos/cerbos:0.41.0
+    container_name: authz-cerbos
+    command: ['server', '--config=/conf/.cerbos.yaml']
+    volumes:
+      - ./deploy/cerbos/.cerbos.yaml:/conf/.cerbos.yaml:ro
+      # Read-WRITE so the PAP can publish compiled tenant policies into it.
+      - ./deploy/cerbos/policies:/policies
+    ports:
+      - '3593:3593' # gRPC — CerbosPdpClient (CERBOS_URL=cerbos:3593)
+      - '3592:3592' # HTTP — health/REST
+    healthcheck:
+      # The cerbos image is distroless (no wget/curl); use the cerbos binary's own
+      # healthcheck subcommand, configured from the same config file (gRPC probe).
+      test: ['CMD', '/cerbos', 'healthcheck', '--config=/conf/.cerbos.yaml']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -35,6 +62,10 @@ services:
     working_dir: /app/apps/authz-admin
     depends_on:
       postgres:
+        condition: service_healthy
+      # The PAP publishes compiled policies into the dir Cerbos watches; bring the
+      # PDP up first so the very first publish hot-reloads (DESIGN §3.4).
+      cerbos:
         condition: service_healthy
     environment:
       NODE_ENV: production
@@ -56,8 +87,187 @@ services:
       # (it can switch to the bootstrap superuser via these — see README).
       DB_APP_USERNAME: authz_app
       DB_APP_PASSWORD: authz_app
+      # Cerbos publishing (DESIGN §3.4, §8.7, FR-8). The PAP compiles each
+      # published/activated/rolled-back policy to a Cerbos resourcePolicy YAML and
+      # writes it into CERBOS_POLICY_DIR — the SAME bind-mount the cerbos service
+      # watches (watchForChanges), so a runtime, user-defined policy becomes
+      # effective within seconds with no restart.
+      CERBOS_PUBLISH_ENABLED: 'true'
+      CERBOS_POLICY_DIR: /policies
+      CERBOS_URL: cerbos:3593
+    volumes:
+      # Shared RW with the cerbos service's /policies mount: the PAP writes,
+      # Cerbos reads + hot-reloads (DESIGN §3.4).
+      - ./deploy/cerbos/policies:/policies
     ports:
       - '3000:3000'
+    restart: unless-stopped
+
+  # Audit service (DESIGN §10 / App. C). Append-only, tamper-evident decision/
+  # admin log with a per-record prev_hash hash chain. Persists to its OWN `audit`
+  # database (created by deploy/postgres/init) — intentionally NOT in the OLTP
+  # path of the other services. Run the migration before first use:
+  #   docker compose run --rm audit pnpm migration:run
+  audit:
+    build:
+      context: .
+      dockerfile: apps/audit/Dockerfile
+    container_name: audit
+    working_dir: /app/apps/audit
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: '3100'
+      LOG_LEVEL: info
+      DB_ENABLED: 'true'
+      DB_HOST: postgres
+      DB_PORT: '5432'
+      # The audit log is a separate trust boundary written only by this service;
+      # there is no per-tenant RLS, so a single owning role is used (DESIGN App. C).
+      DB_USERNAME: authz
+      DB_PASSWORD: authz
+      DB_DATABASE: audit
+      DB_SYNCHRONIZE: 'false'
+    ports:
+      - '3100:3100'
+    restart: unless-stopped
+
+  # Expense service (DESIGN §4.3, §8.2) — the worked Policy Enforcement Point.
+  # POST /v1/expenses/:id/approve runs the @authz/pep guard: loads the resource
+  # from its OWN db, runs the tenant guardrail, resolves the principal via the PAP
+  # (PIP), calls the co-located Cerbos PDP, audits the decision, and on DENY
+  # returns the §8.1 envelope with reason + decisionId. GET /v1/expenses is
+  # authorization-aware (PDP-filtered). Run the migration + seed before first use:
+  #   docker compose run --rm expense pnpm migration:run
+  #   docker compose run --rm expense pnpm seed
+  expense:
+    build:
+      context: .
+      dockerfile: apps/expense/Dockerfile
+    container_name: expense
+    working_dir: /app/apps/expense
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # Co-located PDP — decisions are local gRPC calls (DESIGN §3 D3, §9.2).
+      cerbos:
+        condition: service_healthy
+      # The PAP is the PIP source for effective principal roles/attrs (DESIGN §3.5).
+      authz-admin:
+        condition: service_started
+      # Decision records (allow AND deny) are posted to the audit log (DESIGN §8.7).
+      audit:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT: '3300'
+      LOG_LEVEL: info
+      DB_ENABLED: 'true'
+      DB_HOST: postgres
+      DB_PORT: '5432'
+      # The APP connects as the non-superuser role provisioned by the migration so
+      # FORCE ROW LEVEL SECURITY is enforced; run migration/seed as `expense`
+      # (DB_USERNAME=expense) — the superuser created below — then the API as
+      # `expense_app` (set here). DESIGN §6 / §8.3.
+      DB_USERNAME: expense_app
+      DB_PASSWORD: expense_app
+      DB_DATABASE: expense
+      DB_SYNCHRONIZE: 'false'
+      DB_APP_USERNAME: expense_app
+      DB_APP_PASSWORD: expense_app
+      # PEP wiring (DESIGN §4.4): the co-located PDP, the PAP (PIP), the Audit log.
+      CERBOS_URL: cerbos:3593
+      PAP_URL: http://authz-admin:3000
+      AUDIT_URL: http://audit:3100
+    ports:
+      - '3300:3300'
+    restart: unless-stopped
+
+  # Identity service / OIDC-style IdP (DESIGN §5, §7). Stateless and DB-free:
+  # demo users and the RS256 signing keypair are config-seeded, so it has no
+  # Postgres dependency. Issues RS256 JWT access + refresh tokens and publishes
+  # its public key at /.well-known/jwks.json for the gateway/PEP to verify.
+  # The COMMITTED DEV keypair under apps/identity/keys is baked into the image;
+  # production injects its own via JWT_PRIVATE_KEY(_PATH)/JWT_PUBLIC_KEY(_PATH).
+  identity:
+    build:
+      context: .
+      dockerfile: apps/identity/Dockerfile
+    container_name: identity
+    working_dir: /app/apps/identity
+    environment:
+      NODE_ENV: production
+      PORT: '3200'
+      LOG_LEVEL: info
+      IDENTITY_ISSUER: http://localhost:3200
+      IDENTITY_AUDIENCE: authz-platform
+      JWT_SIGNING_KID: dev-rsa-2026
+      ACCESS_TOKEN_TTL_SECONDS: '900'
+      REFRESH_TOKEN_TTL_SECONDS: '2592000'
+      # Demo users seeded with the Acme tenant UUID as `tid` (the downstream PEPs
+      # require a UUID tenant). The user ids match the role_assignments the
+      # authz-admin seed grants by UUID, so the gateway -> Expense PEP flow resolves
+      # Riya as finance_manager end-to-end. (The built-in default seed uses the
+      # `acme` slug, which is fine for the identity service in isolation but not for
+      # the cross-service demo — hence this override.)
+      SEED_USERS: >-
+        [{"id":"11111111-1111-4111-8111-111111111111","email":"riya@acme.com","password":"Password123!","tenantId":"aaaaaaaa-0000-4000-8000-000000000001","name":"Riya (Finance Manager)"},
+         {"id":"22222222-2222-4222-8222-222222222222","email":"sam@acme.com","password":"Password123!","tenantId":"aaaaaaaa-0000-4000-8000-000000000001","name":"Sam (Engineer)"},
+         {"id":"33333333-3333-4333-8333-333333333333","email":"dev@acme.com","password":"Password123!","tenantId":"aaaaaaaa-0000-4000-8000-000000000001","name":"Dev (Org Admin)"}]
+    ports:
+      - '3200:3200'
+    restart: unless-stopped
+
+  # API Gateway (DESIGN §4.1, §4.3, §4.4, §5, §7) — the authN edge and the single
+  # client entrypoint. Stateless and DB-free. It validates the end-user JWT
+  # against the Identity JWKS, rate-limits, mints a SIGNED INTERNAL identity token
+  # and forwards it (plus x-tenant-id / x-actor-id context the downstream PEPs
+  # consume) when proxying. Routing: /auth/* -> identity; /v1/expenses* -> expense;
+  # /v1/{tenants,org-units,roles,permissions,role-assignments,policies}* and
+  # /admin/* -> authz-admin. It NEVER trusts client-sent identity headers — they
+  # are stripped and re-derived from the verified JWT (confused-deputy, §7).
+  gateway:
+    build:
+      context: .
+      dockerfile: apps/gateway/Dockerfile
+    container_name: gateway
+    working_dir: /app/apps/gateway
+    depends_on:
+      # The gateway fetches the JWKS from identity and routes /auth/* to it.
+      identity:
+        condition: service_started
+      authz-admin:
+        condition: service_started
+      expense:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT: '8080'
+      LOG_LEVEL: info
+      # Inbound user-JWT verification (must match the identity service's claims).
+      IDENTITY_JWKS_URL: http://identity:3200/.well-known/jwks.json
+      IDENTITY_ISSUER: http://localhost:3200
+      IDENTITY_AUDIENCE: authz-platform
+      JWKS_CACHE_TTL_SECONDS: '300'
+      JWT_CLOCK_TOLERANCE_SECONDS: '60'
+      # Signed internal identity token (DEV secret — production MUST override, §7).
+      INTERNAL_TOKEN_SECRET: dev-internal-token-secret-change-me
+      INTERNAL_TOKEN_KID: gw-internal-2026
+      INTERNAL_TOKEN_ISSUER: api-gateway
+      INTERNAL_TOKEN_TTL_SECONDS: '120'
+      # Upstream routing targets (mesh service URLs).
+      IDENTITY_URL: http://identity:3200
+      AUTHZ_ADMIN_URL: http://authz-admin:3000
+      EXPENSE_URL: http://expense:3300
+      UPSTREAM_TIMEOUT_MS: '10000'
+      # Edge rate limiting (DESIGN §4.4, §10).
+      RATE_LIMIT_ENABLED: 'true'
+      RATE_LIMIT_WINDOW_MS: '60000'
+      RATE_LIMIT_MAX: '120'
+    ports:
+      - '8080:8080'
     restart: unless-stopped
 
 volumes:

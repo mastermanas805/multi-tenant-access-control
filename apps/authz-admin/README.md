@@ -98,6 +98,62 @@ curl -s http://localhost:3000/v1/roles \
   -H 'x-tenant-id: aaaaaaaa-0000-4000-8000-000000000001' | jq
 ```
 
+## Dynamic policy publishing to Cerbos (DESIGN §3.4, §8.7, FR-8)
+
+Publishing/activating/rolling back a policy makes it **effective in the Cerbos PDP
+within seconds**, with nothing hardcoded. On each of those use-cases the PAP:
+
+1. compiles the policy's DB jsonb (`Policy.rule`, a `@contracts/core`
+   `PolicyRuleBody`) into a Cerbos `resourcePolicy` via the shared
+   `compilePolicyToCerbos` (`@authz/pep`);
+2. injects the tenant-isolation guardrail as the first rule and emits empty-rules
+   passthrough stubs for every missing ancestor scope (Cerbos requires the whole
+   scope chain to exist);
+3. writes the YAML into `CERBOS_POLICY_DIR` — the **same dir Cerbos watches**
+   (`watchForChanges`), so it hot-reloads with no restart.
+
+The adapter is bound behind an application port (`POLICY_PUBLISHER`). The
+`CERBOS_PUBLISH_ENABLED` toggle swaps in a no-op publisher (used by the test
+suites) so the use-cases run without a filesystem or a live PDP.
+
+| Env                     | Default                  | Purpose                                            |
+| ----------------------- | ------------------------ | -------------------------------------------------- |
+| `CERBOS_PUBLISH_ENABLED`| `true`                   | `false` → no-op publisher (no disk write)          |
+| `CERBOS_POLICY_DIR`     | `deploy/cerbos/policies` | shared dir the PDP watches (compose bind-mount)    |
+| `CERBOS_URL`            | `localhost:3593`         | PDP gRPC endpoint (diagnostics / PEP symmetry)     |
+
+```bash
+# Publish a policy for scope acme.finance; the PAP writes
+# deploy/cerbos/policies/expense_report.acme.finance.yaml (+ the acme stub),
+# which Cerbos hot-reloads.
+curl -s -X POST http://localhost:3000/v1/policies \
+  -H 'x-tenant-id: aaaaaaaa-0000-4000-8000-000000000001' \
+  -H 'content-type: application/json' \
+  -d '{"scope":"acme.finance","effectiveDate":"2026-07-01T00:00:00.000Z",
+       "rule":{"resource":"expense_report","rules":[
+         {"name":"finance_manager_approve","actions":["read","approve"],
+          "effect":"ALLOW","roles":["finance_manager"],
+          "condition":{"all":[{"expr":"request.resource.attr.amount < 10000"}]}}]}}' | jq
+```
+
+## PIP — principal resolution (DESIGN §3.2, §3.5)
+
+`GET /v1/principals/:userId/effective?tenantId=&scope=` returns the
+`@contracts/core` `EffectivePrincipal` `{ id, tenantId, roles[], attr }` — the
+read model the Expense PEP consumes via `@authz/pep`'s `HttpPipClient`. Roles are
+resolved from the principal's `role_assignments` joined with `roles` (role
+**keys**, not UUIDs), honoring **scope inheritance up the org path**: a role
+granted at any ancestor scope is effective at the requested (narrower) scope.
+This is a trusted service-to-service read, so the tenant comes from the `tenantId`
+query param (the PEP's call contract) rather than the `x-tenant-id` header; RLS
+still scopes every read.
+
+```bash
+# Riya is finance_manager @ acme.finance.emea → resolve at that scope:
+curl -s 'http://localhost:3000/v1/principals/riya/effective?tenantId=aaaaaaaa-0000-4000-8000-000000000001&scope=acme.finance.emea' | jq
+# → {"id":"riya","tenantId":"aaaa…","roles":["finance_manager"],"attr":{"tenantId":"aaaa…","department":"finance"}}
+```
+
 ## Scripts
 
 | Script                | Purpose                                              |

@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // ts-jest runs in a CommonJS node runtime. Override the project's `nodenext`
+    // module-emit to `commonjs` so the ESM @cerbos/grpc client (and its protobuf
+    // runtime) downlevel to require()-able CJS at transform time. The project's
+    // own tsconfig.json stays `nodenext` for typecheck (which needs the
+    // @cerbos/grpc `exports` map to resolve types).
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "allowJs": true,
+    "isolatedModules": true
+  }
+}

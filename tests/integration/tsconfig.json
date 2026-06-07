@@ -1,0 +1,44 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node", "jest"],
+    "noEmit": true,
+    // ts-jest also transforms the cerbos ESM .js (see jest.config transform);
+    // allow JS so those files are downleveled to CJS under the test runtime. The
+    // CommonJS module-emit override for ts-jest is applied INLINE in jest.config
+    // (so this config stays `nodenext` and resolves the @cerbos/grpc exports map
+    // for typecheck).
+    "allowJs": true,
+    // This is a TYPE-CHECK-ONLY project (no emit): it imports the apps' loose
+    // SOURCE to boot them in-process, which a `composite` project-references build
+    // (rootDir-bounded) forbids. Disable composite/declaration and check with
+    // `tsc -p` (not `tsc -b`).
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "incremental": false,
+    // The integration suite imports the apps' SOURCE (their AppModules) so it can
+    // boot the real Nest apps in-process against the Testcontainers Postgres +
+    // Cerbos. Aliases point at each package's `src` so a prior build is not
+    // required to run the tests (ts-jest single-file transpile, mirrors the
+    // per-app jest configs). `@app/*` is intentionally NOT aliased here: each app
+    // resolves its own `@app/*` via its own tsconfig — the integration tests
+    // import apps by relative path, never via `@app`.
+    "paths": {
+      "@kernel": ["../../packages/kernel/src/index.ts"],
+      "@kernel/core": ["../../packages/kernel/src/index.ts"],
+      "@kernel/*": ["../../packages/kernel/src/*"],
+      "@contracts/core": ["../../packages/contracts/src/index.ts"],
+      "@authz/pep": ["../../packages/authz/src/index.ts"]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    // The apps' ambient Express augmentations (req.identity / req.traceId /
+    // req.authzPrincipal) are NOT reached by following imports — pull them into
+    // the program explicitly so booting the apps in-process type-checks.
+    "../../apps/gateway/src/types/express.d.ts",
+    "../../apps/expense/src/shared/types/express.d.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
+}

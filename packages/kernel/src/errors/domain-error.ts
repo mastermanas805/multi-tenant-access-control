@@ -13,10 +13,18 @@ export abstract class DomainError extends Error {
   /** Optional: the specific rule/condition that failed (envelope `reason`). */
   public readonly reason?: string;
 
-  protected constructor(message: string, reason?: string) {
+  /**
+   * Optional: the PDP decision id when the error stems from an authorization
+   * decision (envelope `decisionId`, DESIGN §8.1). Carried so the PEP can surface
+   * the deciding decision id without the presentation layer knowing about authz.
+   */
+  public readonly decisionId?: string;
+
+  protected constructor(message: string, reason?: string, decisionId?: string) {
     super(message);
     this.name = new.target.name;
     this.reason = reason;
+    this.decisionId = decisionId;
     // Restore the prototype chain when targeting ES5/ES2015 down-leveling.
     Object.setPrototypeOf(this, new.target.prototype);
   }
@@ -49,11 +57,15 @@ export class ValidationError extends DomainError {
   }
 }
 
-/** Authorization denied by a domain rule or tenant guardrail. -> 403 */
+/**
+ * Authorization denied by a domain rule, the PDP, or the tenant guardrail. -> 403
+ * Carries the optional PDP `decisionId` (DESIGN §8.1) so the PEP can surface the
+ * deciding decision in the error envelope.
+ */
 export class ForbiddenError extends DomainError {
   public readonly code = 'forbidden';
 
-  constructor(message = 'Forbidden', reason?: string) {
-    super(message, reason);
+  constructor(message = 'Forbidden', reason?: string, decisionId?: string) {
+    super(message, reason, decisionId);
   }
 }

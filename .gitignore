@@ -20,3 +20,8 @@ coverage/
 # OS
 .DS_Store
 Thumbs.db
+
+# Private signing keys — never commit; generate at bootstrap / via a key-gen script
+*-private.pem
+*.private.pem
+**/keys/*private*
