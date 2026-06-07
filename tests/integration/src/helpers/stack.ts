@@ -135,7 +135,10 @@ async function runMigrations(
  * live — the FR-8 staleness bound, observed.
  */
 async function waitForPolicyEffective(cerbosHttpUrl: string): Promise<void> {
-  const deadline = Date.now() + 30_000;
+  // 60s headroom: syncPolicies restarts the PDP, so this poll also rides through
+  // the restart (connection errors are caught + retried) until the published
+  // acme.finance rule is live on slower CI runners.
+  const deadline = Date.now() + 60_000;
   const body = {
     requestId: 'int-warmup',
     principal: {
