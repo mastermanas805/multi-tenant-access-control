@@ -41,6 +41,24 @@ export const configSchema = z.object({
   // gRPC endpoint of the Cerbos PDP — surfaced for symmetry with the PEP config
   // and for an operator health/diagnostics view (DESIGN §8.2).
   CERBOS_URL: z.string().default('localhost:3593'),
+
+  // --- Internal identity token verification (DESIGN §5, §7) ---
+  // The shared secret the gateway signs the internal identity token's HS256 JWS
+  // with (the gateway's INTERNAL_TOKEN_SECRET). The PAP — the IAM control plane —
+  // mounts the reusable PEP's IdentityContextMiddleware, which VERIFIES
+  // x-internal-identity-signature (iss + exp) and rejects (401) a missing/invalid
+  // signature; tenant/actor/platform-admin are then derived from the VERIFIED
+  // signed token, never from plaintext x-tenant-id/x-actor-id/x-platform-admin
+  // headers (confused-deputy defense — a co-located/SSRF/east-west caller cannot
+  // forge a tenant + platform-admin context against the IAM plane). When empty (the
+  // default) the middleware runs the documented DEV/TEST placeholder that only
+  // base64url-decodes the claims, so the unit/e2e suites pass without a real gateway
+  // hop. A boot guard below refuses to start in production with verification disabled.
+  INTERNAL_TOKEN_SECRET: z.string().default(''),
+  // Expected `iss` of the signed internal token — the gateway's INTERNAL_TOKEN_ISSUER.
+  INTERNAL_TOKEN_ISSUER: z.string().default('api-gateway'),
+  // Clock-skew tolerance (seconds) for the internal token's `exp` check.
+  INTERNAL_TOKEN_CLOCK_TOLERANCE_SECONDS: z.coerce.number().int().nonnegative().default(60),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
@@ -64,7 +82,33 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new Error(`Invalid environment configuration:\n${issues}`);
   }
   assertProductionDbCredentials(parsed.data, env);
+  assertProductionInternalTokenSecret(parsed.data);
   return parsed.data;
+}
+
+/**
+ * Refuses to boot when NODE_ENV=production and INTERNAL_TOKEN_SECRET is unset, so
+ * the PAP's IdentityContextMiddleware would fall back to the DEV/TEST placeholder
+ * that trusts an UNSIGNED x-internal-identity header. For the IAM control plane that
+ * is a confused-deputy hole: any party that can reach the PAP directly on the mesh
+ * (SSRF, a compromised co-located service, a misconfigured NetworkPolicy) could
+ * assert an arbitrary tenant + platform-admin context and breach cross-tenant
+ * isolation of the entire IAM plane. Fail closed and demand the gateway's signing
+ * secret (DESIGN §7). Mirrors the same guard on the Expense PEP.
+ */
+function assertProductionInternalTokenSecret(config: AppConfig): void {
+  if (config.NODE_ENV !== 'production') {
+    return;
+  }
+  if (config.INTERNAL_TOKEN_SECRET.length === 0) {
+    throw new Error(
+      'Invalid environment configuration:\n  - INTERNAL_TOKEN_SECRET: ' +
+        'must be set in production so the PAP verifies the gateway-signed internal ' +
+        'identity token (refusing to boot with internal-token signature verification ' +
+        'disabled, which would trust unsigned identity headers on the IAM control ' +
+        "plane). Set it to the gateway's INTERNAL_TOKEN_SECRET.",
+    );
+  }
 }
 
 /**

@@ -48,7 +48,8 @@ import { RolePageResponse, RoleResponse } from './dto/role.response';
 @ApiBearerAuth()
 @ApiHeader({
   name: TenantContextGuard.TENANT_HEADER,
-  description: 'Tenant UUID — placeholder for the verified JWT tid claim (DESIGN §6).',
+  description:
+    'Signed internal identity token (gateway-injected, PEP-verified) carrying the tenant context (DESIGN §5/§6/§7).',
   required: true,
 })
 @UseGuards(TenantContextGuard)

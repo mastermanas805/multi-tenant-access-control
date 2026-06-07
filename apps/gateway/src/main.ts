@@ -25,6 +25,22 @@ async function bootstrap(): Promise<void> {
   // Trust the edge proxy/LB so req.ip reflects the real client (rate limiting).
   app.set('trust proxy', true);
 
+  // Browser CORS (DESIGN §13): the demo SPA is a separate origin and calls the
+  // gateway directly with a Bearer token. Allow only the configured origins; an
+  // empty list disables CORS (server-to-server only). Nest handles the OPTIONS
+  // preflight automatically. The SPA never reads cross-site cookies (the JWT
+  // lives in JS memory and is sent as an Authorization header), so credentials
+  // are NOT enabled — origin allow-listing is the control.
+  const corsOrigins = config.values.CORS_ALLOWED_ORIGINS;
+  if (corsOrigins.length > 0) {
+    app.enableCors({
+      origin: corsOrigins,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Authorization', 'Content-Type', 'If-Match', 'Idempotency-Key'],
+      maxAge: 600,
+    });
+  }
+
   // Security headers (DESIGN §10).
   app.use(helmet());
 

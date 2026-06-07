@@ -35,6 +35,7 @@ export class ConfigUserRepository implements UserRepository, OnModuleInit {
         tenantId: seed.tenantId,
         ...(seed.name !== undefined ? { name: seed.name } : {}),
         active: true,
+        ...(seed.platformAdmin ? { platformAdmin: true } : {}),
       });
       this.byEmail.set(user.email.toString(), user);
       this.byId.set(user.userId.toString(), user);

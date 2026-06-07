@@ -138,6 +138,25 @@ describe('IssueTokenUseCase', () => {
     });
   });
 
+  it('mints the platform-admin scope into the claims for an admin account (DESIGN §6/§7)', async () => {
+    const adminUser = User.fromSnapshot({
+      id: USER_ID,
+      email: 'dev@acme.com',
+      passwordHash: 'scrypt$00$ff',
+      tenantId: 'acme',
+      name: 'Dev (Org Admin)',
+      active: true,
+      platformAdmin: true,
+    });
+    const signer = makeSigner();
+    const useCase = build(makeRepo(adminUser), makeHasher(true), signer, makeStore());
+
+    await useCase.execute({ email: 'dev@acme.com', password: 'Password123!' });
+
+    const claims = signer.signAccessToken.mock.calls[0][0] as AccessTokenClaims;
+    expect(claims.platformAdmin).toBe(true);
+  });
+
   it('rejects a wrong password with InvalidCredentialsError (no token issued)', async () => {
     const signer = makeSigner();
     const store = makeStore();

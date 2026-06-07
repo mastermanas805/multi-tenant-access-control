@@ -45,7 +45,8 @@ import { PermissionPageResponse, PermissionResponse } from './dto/permission.res
 @ApiBearerAuth()
 @ApiHeader({
   name: TenantContextGuard.TENANT_HEADER,
-  description: 'Tenant UUID — placeholder for the verified JWT tid claim (DESIGN §6).',
+  description:
+    'Signed internal identity token (gateway-injected, PEP-verified) carrying the tenant/platform-admin context (DESIGN §5/§6/§7).',
   required: true,
 })
 @UseGuards(TenantContextGuard)
@@ -61,12 +62,6 @@ export class PermissionController {
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(PlatformAdminGuard)
   @ApiOperation({ summary: 'Register a permission in the global catalog (platform-admin only)' })
-  @ApiHeader({
-    name: TenantContextGuard.PLATFORM_ADMIN_HEADER,
-    description:
-      'Platform-admin scope — placeholder for the verified JWT scope/role claim. Required to write the shared global catalog (DESIGN §6 / App. A).',
-    required: true,
-  })
   @ApiHeader({
     name: 'idempotency-key',
     description: 'Required for mutations (DESIGN §8.1).',

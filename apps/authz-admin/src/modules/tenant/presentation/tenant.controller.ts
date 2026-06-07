@@ -48,13 +48,8 @@ import { TenantPageResponse, TenantResponse } from './dto/tenant.response';
 @ApiBearerAuth()
 @ApiHeader({
   name: TenantContextGuard.TENANT_HEADER,
-  description: 'Tenant UUID — placeholder for the verified JWT tid claim (DESIGN §6).',
-  required: true,
-})
-@ApiHeader({
-  name: TenantContextGuard.PLATFORM_ADMIN_HEADER,
   description:
-    'Platform-admin scope — placeholder for the verified JWT scope/role claim. Required: tenant lifecycle is platform-admin-only (DESIGN §6 / App. A).',
+    'Signed internal identity token (gateway-injected, PEP-verified). Carries the tenant/platform-admin context (DESIGN §5/§6/§7) — tenant lifecycle is platform-admin-only and is authorized from the VERIFIED platformAdmin claim, never a client header.',
   required: true,
 })
 @UseGuards(TenantContextGuard, PlatformAdminGuard)

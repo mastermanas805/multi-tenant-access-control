@@ -13,19 +13,10 @@ import {
   DomainError,
   ForbiddenError,
   NotFoundError,
+  UnauthenticatedError,
   ValidationError,
 } from '@kernel/core';
-
-/** The section-8.1 error envelope. Every 4xx/5xx response uses this shape. */
-export interface ErrorEnvelope {
-  error: {
-    code: string;
-    message: string;
-    reason?: string;
-    decisionId?: string;
-    traceId?: string;
-  };
-}
+import { type ErrorEnvelope } from '@contracts/core';
 
 /**
  * Maps thrown errors to HTTP + the DESIGN §8.1 error envelope:
@@ -107,6 +98,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   }
 
   private statusForDomainError(error: DomainError): number {
+    if (error instanceof UnauthenticatedError) {
+      // The PEP's IdentityContextMiddleware rejects a missing/invalid signed
+      // internal identity token with this (DESIGN §7) -> 401.
+      return HttpStatus.UNAUTHORIZED;
+    }
     if (error instanceof NotFoundError) {
       return HttpStatus.NOT_FOUND;
     }

@@ -13,22 +13,12 @@ import {
   DomainError,
   ForbiddenError,
   NotFoundError,
+  UnauthenticatedError,
   ValidationError,
 } from '@kernel/core';
+import { type ErrorEnvelope } from '@contracts/core';
 
-import { UnauthenticatedError } from '../errors/unauthenticated.error';
 import { UpstreamUnavailableError } from '../errors/upstream.error';
-
-/** The section-8.1 error envelope. Every 4xx/5xx response uses this shape. */
-export interface ErrorEnvelope {
-  error: {
-    code: string;
-    message: string;
-    reason?: string;
-    decisionId?: string;
-    traceId?: string;
-  };
-}
 
 /**
  * Maps thrown errors to HTTP + the DESIGN §8.1 error envelope:

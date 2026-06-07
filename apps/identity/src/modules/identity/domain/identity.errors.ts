@@ -1,4 +1,4 @@
-import { UnauthenticatedError } from '../../../shared/errors/unauthenticated.error';
+import { UnauthenticatedError } from '@kernel/core';
 
 /**
  * Authentication failed: unknown user, wrong password, or a disabled account.

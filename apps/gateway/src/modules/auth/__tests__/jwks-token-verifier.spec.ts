@@ -4,10 +4,9 @@ import {
   type KeyObject,
 } from 'node:crypto';
 
-import { type Clock } from '@kernel/core';
+import { type Clock, UnauthenticatedError } from '@kernel/core';
 
 import { ConfigService } from '../../../config/config.service';
-import { UnauthenticatedError } from '../../../shared/errors/unauthenticated.error';
 import { BearerToken } from '../domain/value-objects/bearer-token.vo';
 import { JwksTokenVerifier } from '../infrastructure/jwks-token-verifier';
 
@@ -80,6 +79,28 @@ describe('JwksTokenVerifier (DESIGN §4.3/§5/§7)', () => {
     expect(claims.tid).toBe('acme');
     expect(claims.sid).toBe('sess-1');
     expect(claims.act).toBe('user-1');
+    // A token without the scope claim is NOT a platform-admin (fail-closed).
+    expect(claims.platformAdmin).toBeUndefined();
+  });
+
+  it('surfaces a boolean-true platform_admin scope claim as platformAdmin', async () => {
+    const { verifier, privateKey } = setup();
+    const claims = await verifier.verify(
+      BearerToken.fromAuthorizationHeader(
+        `Bearer ${signJwt(privateKey, { ...validClaims, platform_admin: true })}`,
+      ),
+    );
+    expect(claims.platformAdmin).toBe(true);
+  });
+
+  it('does NOT honor a non-boolean platform_admin claim (e.g. the string "true") — fail-closed', async () => {
+    const { verifier, privateKey } = setup();
+    const claims = await verifier.verify(
+      BearerToken.fromAuthorizationHeader(
+        `Bearer ${signJwt(privateKey, { ...validClaims, platform_admin: 'true' })}`,
+      ),
+    );
+    expect(claims.platformAdmin).toBeUndefined();
   });
 
   it('rejects a token with a tampered payload (signature mismatch)', async () => {

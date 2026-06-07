@@ -46,6 +46,15 @@ import { SharedModule } from './shared/shared.module';
         auditUrl: config.values.AUDIT_URL,
         pipCacheTtlMs: 5000,
         pipCacheMaxEntries: 10000,
+        pipTimeoutMs: config.values.PIP_TIMEOUT_MS,
+        // When INTERNAL_TOKEN_SECRET is set, the IdentityContextMiddleware verifies
+        // the gateway's HS256 JWS signature (iss + exp) and rejects unsigned/forged
+        // tokens with 401 — the production path (DESIGN §7). Empty -> dev/test
+        // placeholder decode (a boot guard refuses to start in production unset).
+        internalTokenSecret: config.values.INTERNAL_TOKEN_SECRET,
+        internalTokenIssuer: config.values.INTERNAL_TOKEN_ISSUER,
+        internalTokenClockToleranceSeconds:
+          config.values.INTERNAL_TOKEN_CLOCK_TOLERANCE_SECONDS,
       }),
     }),
     ExpenseModule,

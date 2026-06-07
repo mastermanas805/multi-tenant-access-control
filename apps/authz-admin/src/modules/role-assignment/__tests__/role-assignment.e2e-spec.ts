@@ -13,6 +13,7 @@ import {
   makeCursorPage,
 } from '@kernel/core';
 
+import { identityHeaders } from '../../../../test/identity-header';
 import { AppModule } from '../../../app.module';
 import { GlobalExceptionFilter } from '../../../shared/presentation/global-exception.filter';
 import { type RoleAssignment } from '../domain/role-assignment.entity';
@@ -74,6 +75,20 @@ describe('RoleAssignment module (e2e)', () => {
   let app: INestApplication;
   const dispatcher = new RecordingDispatcher();
   const tenantHeader = randomUUID();
+  // Identity flows via the VERIFIED signed internal token (DESIGN §5/§6/§7).
+  // Granting/revoking a role is a high-privilege IAM mutation, so the write routes
+  // are platform-admin-only (finding 2): adminHeader carries the verified
+  // platform-admin claim; nonAdminHeader is an authenticated but NON-admin tenant
+  // user (e.g. an engineer) who must be rejected. adminAsActor pins the actorId so
+  // the test can assert delegatedBy is stamped from the verified caller, not the body.
+  const adminHeader = identityHeaders({ tenantId: tenantHeader, platformAdmin: true });
+  const nonAdminHeader = identityHeaders({ tenantId: tenantHeader });
+  const adminAsActor = identityHeaders({
+    tenantId: tenantHeader,
+    sub: 'admin_real',
+    actorId: 'admin_real',
+    platformAdmin: true,
+  });
 
   beforeAll(async () => {
     // DB disabled so DatabaseModule boots without Postgres and RLS passes through.
@@ -109,44 +124,69 @@ describe('RoleAssignment module (e2e)', () => {
     expect(res.body.error.code).toBe('unauthenticated');
   });
 
-  it('assigns a role and lists it back for the user', async () => {
+  it('rejects a NON-admin caller granting a role with 403 (no in-tenant self-escalation — finding 2)', async () => {
+    // An authenticated tenant user (e.g. Sam the engineer) must NOT be able to grant
+    // himself finance_manager via the gateway endpoint. The server gate is the
+    // authority — not the UI hiding the Admin screen (DESIGN §6/§7).
+    const res = await request(app.getHttpServer())
+      .post('/v1/role-assignments')
+      .set(nonAdminHeader)
+      .send({ userId: 'sam', roleId: 'role_finance_manager', scope: 'acme.finance' })
+      .expect(403);
+    expect(res.body.error.code).toBe('forbidden');
+  });
+
+  it('rejects a NON-admin caller revoking an assignment with 403 (finding 2)', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/v1/role-assignments')
+      .set(adminHeader)
+      .send({ userId: 'user_guarded', roleId: 'role_g', scope: 'acme.ops' })
+      .expect(201);
+
+    const res = await request(app.getHttpServer())
+      .post(`/v1/role-assignments/${created.body.id as string}/revoke`)
+      .set(nonAdminHeader)
+      .send()
+      .expect(403);
+    expect(res.body.error.code).toBe('forbidden');
+  });
+
+  it('assigns a role (platform-admin) and lists it back for the user', async () => {
     const assign = await request(app.getHttpServer())
       .post('/v1/role-assignments')
-      .set('x-tenant-id', tenantHeader)
+      .set(adminHeader)
       .send({ userId: 'user_riya', roleId: 'role_7f3', scope: 'acme.finance.emea' })
       .expect(201);
 
     expect(assign.body.status).toBe('active');
     expect(assign.body.tenantId).toBe(tenantHeader);
     expect(assign.body.version).toBe(1);
-    // No actor presented -> delegatedBy is null (never invented).
-    expect(assign.body.delegatedBy).toBeNull();
 
+    // List is a read — available to an authenticated (non-admin) caller in-tenant.
     const list = await request(app.getHttpServer())
       .get('/v1/role-assignments?userId=user_riya')
-      .set('x-tenant-id', tenantHeader)
+      .set(nonAdminHeader)
       .expect(200);
     expect(list.body.items).toHaveLength(1);
     expect(list.body.items[0].scope).toBe('acme.finance.emea');
   });
 
-  it('stamps delegatedBy from the authenticated actor (x-actor-id), not the body', async () => {
+  it('stamps delegatedBy from the VERIFIED caller (token actorId), not the body', async () => {
     const assign = await request(app.getHttpServer())
       .post('/v1/role-assignments')
-      .set('x-tenant-id', tenantHeader)
-      .set('x-actor-id', 'admin_real')
+      .set(adminAsActor)
       .send({ userId: 'user_deleg', roleId: 'role_d', scope: 'acme.finance' })
       .expect(201);
 
-    // delegatedBy is the server-stamped caller identity, not anything the client sent.
+    // delegatedBy is the server-stamped caller identity from the signed token,
+    // not anything the client sent in the body.
     expect(assign.body.delegatedBy).toBe('admin_real');
   });
 
   it('rejects a client-supplied delegatedBy in the body (non-whitelisted -> 400)', async () => {
     const res = await request(app.getHttpServer())
       .post('/v1/role-assignments')
-      .set('x-tenant-id', tenantHeader)
-      .set('x-actor-id', 'admin_real')
+      .set(adminAsActor)
       .send({
         userId: 'user_spoof',
         roleId: 'role_s',
@@ -160,13 +200,13 @@ describe('RoleAssignment module (e2e)', () => {
   it('rejects a duplicate active assignment with 409 + the error envelope', async () => {
     await request(app.getHttpServer())
       .post('/v1/role-assignments')
-      .set('x-tenant-id', tenantHeader)
+      .set(adminHeader)
       .send({ userId: 'user_dup', roleId: 'role_a', scope: 'acme.sales' })
       .expect(201);
 
     const res = await request(app.getHttpServer())
       .post('/v1/role-assignments')
-      .set('x-tenant-id', tenantHeader)
+      .set(adminHeader)
       .send({ userId: 'user_dup', roleId: 'role_a', scope: 'acme.sales' })
       .expect(409);
 
@@ -178,16 +218,16 @@ describe('RoleAssignment module (e2e)', () => {
   it('returns 400 + validation envelope for a bad scope path', async () => {
     const res = await request(app.getHttpServer())
       .post('/v1/role-assignments')
-      .set('x-tenant-id', tenantHeader)
+      .set(adminHeader)
       .send({ userId: 'user_bad', roleId: 'role_a', scope: 'Not A Path' })
       .expect(400);
     expect(res.body.error.code).toBe('validation_failed');
   });
 
-  it('revokes an assignment and dispatches RoleAssignmentRevoked (DESIGN §3.4)', async () => {
+  it('revokes an assignment (platform-admin) and dispatches RoleAssignmentRevoked (DESIGN §3.4)', async () => {
     const created = await request(app.getHttpServer())
       .post('/v1/role-assignments')
-      .set('x-tenant-id', tenantHeader)
+      .set(adminHeader)
       .send({ userId: 'user_revoke', roleId: 'role_b', scope: 'acme.ops' })
       .expect(201);
 
@@ -195,7 +235,7 @@ describe('RoleAssignment module (e2e)', () => {
 
     const res = await request(app.getHttpServer())
       .post(`/v1/role-assignments/${created.body.id as string}/revoke`)
-      .set('x-tenant-id', tenantHeader)
+      .set(adminHeader)
       .send()
       .expect(200);
 

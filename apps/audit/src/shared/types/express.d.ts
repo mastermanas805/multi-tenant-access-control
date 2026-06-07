@@ -8,12 +8,22 @@
  */
 import 'express';
 
+import { type AuthzPrincipalContext } from '@authz/pep';
+
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       /** Correlation id (set by RequestContextMiddleware). */
       traceId?: string;
+      /**
+       * The VERIFIED principal context the PEP's IdentityContextMiddleware sets on
+       * the audit READ routes from the gateway-signed internal token (tenant/actor/
+       * platform-admin). The read controller scopes the decision log to this
+       * tenant, never a client `?tenantId=` (DESIGN §6/§7). Undefined on routes the
+       * middleware does not cover (health, the ingest POST).
+       */
+      authzPrincipal?: AuthzPrincipalContext;
     }
   }
 }

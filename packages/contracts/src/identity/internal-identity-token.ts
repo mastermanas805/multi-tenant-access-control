@@ -26,4 +26,17 @@ export interface InternalIdentityToken {
   readonly actorId: string;
   /** End-user session id — the verified JWT `sid` claim; links a decision to a session. */
   readonly sessionId: string;
+  /**
+   * Whether the verified end-user holds the PLATFORM-ADMIN scope (DESIGN §6 /
+   * App. A — SoD on admin roles). Derived by the gateway from the cryptographically
+   * verified user JWT (the `platform_admin` claim, set by the IdP) and carried
+   * INSIDE the signed internal token so a downstream control-plane PEP (the PAP)
+   * authorizes platform-wide surfaces against a value it can verify — never a
+   * client-settable `x-platform-admin` header (confused-deputy defense, §7).
+   *
+   * Optional on the wire: a token minted before this claim existed, or for a
+   * non-admin principal, simply omits it. Consumers MUST treat an absent claim as
+   * `false` (fail-closed) — absence is never elevation.
+   */
+  readonly platformAdmin?: boolean;
 }

@@ -7,94 +7,69 @@ import {
 import { type Request } from 'express';
 
 import { UniqueEntityID } from '@kernel/core';
+import { IdentityContextMiddleware } from '@authz/pep';
 
 import { TenantContextService } from '../infrastructure/database/tenant-context';
 
 /**
- * Establishes the per-request tenant context (DESIGN §6).
+ * Establishes the per-request tenant context for the PAP's human-facing IAM
+ * surfaces (DESIGN §6) from the VERIFIED principal — never plaintext headers.
  *
- * PRODUCTION: the tenant id comes from the verified JWT `tid` claim, set by the
- * IdP and never by the client. This service is the PAP, so a real deployment
- * sits behind the gateway that validates the admin JWT.
+ * The PEP's IdentityContextMiddleware (mounted in AppModule.configure) has already
+ * verified the gateway-signed internal identity token and populated
+ * `req.authzPrincipal` with the principal's tenant (`tid`), actor and the
+ * platform-admin scope. This guard reads ONLY that verified context and binds it
+ * into the TenantContextService so the RlsInterceptor scopes every query, the
+ * PlatformAdminGuard can authorize platform-wide surfaces, and use-cases can stamp
+ * audit attributes (e.g. role-assignment `delegatedBy`) from the caller's identity.
  *
- * THIS REFERENCE IMPL: as a documented placeholder we read a validated
- * `x-tenant-id` header (must be a UUID). This is the ONLY thing to swap when
- * wiring the real JWT — replace `extractTenantId` with the `tid` claim read.
+ * This is the hardened S2S path (DESIGN §7): because identity comes from the signed
+ * token rather than `x-tenant-id`/`x-actor-id`/`x-platform-admin` headers, a party
+ * that can reach the PAP directly on the mesh (SSRF, a compromised co-located
+ * service, a misconfigured NetworkPolicy) cannot forge a tenant + platform-admin
+ * context against the IAM control plane.
  *
- * The guard runs `TenantContextService.run(...)` for the remainder of the
- * request so the RlsInterceptor and repositories see the tenant.
+ * Fail-closed: a missing principal context or a non-UUID tenant id is rejected
+ * (401) rather than letting an unscoped query through.
  */
 @Injectable()
 export class TenantContextGuard implements CanActivate {
-  public static readonly TENANT_HEADER = 'x-tenant-id';
-
   /**
-   * Placeholder for the verified JWT platform-admin scope/role claim (DESIGN §6).
-   * In production this is a claim minted by the IdP and validated at the edge —
-   * NEVER set by the client. Here it is a documented header so the authorization
-   * model is exercisable; swap it for the claim read alongside `extractTenantId`.
+   * OpenAPI documentation reference for the signed internal identity token header
+   * the gateway injects and the PEP middleware VERIFIES (the base64url(JSON) claims
+   * + its HS256 JWS signature header carry the tenant/actor/platform-admin context).
+   * Identity is NEVER taken from a client-settable header — these are documented so
+   * the contract is discoverable, not because a caller supplies them.
    */
-  public static readonly PLATFORM_ADMIN_HEADER = 'x-platform-admin';
-
-  /**
-   * Placeholder for the verified JWT `sub` claim — the authenticated CALLER's
-   * identity (the actor). In production this is minted by the IdP and validated at
-   * the edge, NEVER set by the client. Here it is a documented header so the
-   * server can stamp audit-relevant attributes (e.g. role-assignment
-   * `delegatedBy`) from the caller's identity rather than trusting the request
-   * body; swap it for the `sub` claim read alongside `extractTenantId`.
-   */
-  public static readonly ACTOR_HEADER = 'x-actor-id';
+  public static readonly TENANT_HEADER = IdentityContextMiddleware.TOKEN_HEADER;
+  /** Signature header documented alongside the identity token (DESIGN §7). */
+  public static readonly SIGNATURE_HEADER = IdentityContextMiddleware.SIGNATURE_HEADER;
 
   constructor(private readonly tenantContext: TenantContextService) {}
 
   public canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<Request>();
-    const tenantId = this.extractTenantId(request);
-    const isPlatformAdmin = this.extractPlatformAdmin(request);
-    const actorId = this.extractActorId(request);
+    const principal = request.authzPrincipal;
+    if (!principal) {
+      throw new UnauthorizedException('No authenticated principal context on the request');
+    }
+    if (!UniqueEntityID.isValidUuid(principal.tenantId)) {
+      throw new UnauthorizedException('Internal identity token carries a non-UUID tenant id');
+    }
 
     // Bind the tenant context for the remainder of this async request so the
-    // RlsInterceptor, controllers, use-cases and repositories all see it.
-    this.tenantContext.enterWith({ tenantId, isPlatformAdmin, actorId });
+    // RlsInterceptor, controllers, use-cases and repositories all see it. Every
+    // field is sourced from the VERIFIED signed token (confused-deputy defense):
+    //  - tenantId       -> the token `tid` claim (drives RLS);
+    //  - isPlatformAdmin-> the verified `platformAdmin` claim (gates platform-wide
+    //                      surfaces; absent -> false, fail-closed);
+    //  - actorId        -> the token `actorId` claim (stamped server-side as e.g.
+    //                      role-assignment `delegatedBy`, never read from the body).
+    this.tenantContext.enterWith({
+      tenantId: principal.tenantId,
+      isPlatformAdmin: principal.platformAdmin,
+      actorId: principal.actorId,
+    });
     return true;
-  }
-
-  /** Placeholder for the real JWT `tid` claim. Validates a UUID tenant header. */
-  private extractTenantId(request: Request): string {
-    const header = request.headers[TenantContextGuard.TENANT_HEADER];
-    const value = Array.isArray(header) ? header[0] : header;
-    if (!value || value.trim().length === 0) {
-      throw new UnauthorizedException(
-        `Missing ${TenantContextGuard.TENANT_HEADER} header (placeholder for JWT tid claim)`,
-      );
-    }
-    if (!UniqueEntityID.isValidUuid(value)) {
-      throw new UnauthorizedException(`${TenantContextGuard.TENANT_HEADER} must be a valid UUID`);
-    }
-    return value;
-  }
-
-  /**
-   * Placeholder for the verified JWT platform-admin claim. Reads the
-   * `x-platform-admin` header and treats only the exact value `true` as the
-   * scope being present (fail-closed for anything else).
-   */
-  private extractPlatformAdmin(request: Request): boolean {
-    const header = request.headers[TenantContextGuard.PLATFORM_ADMIN_HEADER];
-    const value = Array.isArray(header) ? header[0] : header;
-    return value?.trim().toLowerCase() === 'true';
-  }
-
-  /**
-   * Placeholder for the verified JWT `sub` claim. Reads the `x-actor-id` header
-   * and returns the caller's identity, or null when none was presented. Never
-   * read from the request BODY — that is what allows audit-attribute spoofing.
-   */
-  private extractActorId(request: Request): string | null {
-    const header = request.headers[TenantContextGuard.ACTOR_HEADER];
-    const value = Array.isArray(header) ? header[0] : header;
-    const trimmed = value?.trim();
-    return trimmed && trimmed.length > 0 ? trimmed : null;
   }
 }

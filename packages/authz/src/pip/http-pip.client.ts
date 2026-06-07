@@ -8,6 +8,7 @@ import { TtlLruCache } from './ttl-lru-cache';
 
 const DEFAULT_TTL_MS = 5_000; // DESIGN §9.1 staleness ceiling (~5s).
 const DEFAULT_MAX_ENTRIES = 10_000; // DESIGN App. D.3 active working set.
+const DEFAULT_PIP_TIMEOUT_MS = 2_000; // DESIGN §9 D8 — bound a hung PAP, fail-closed.
 
 /**
  * HTTP PIP implementation (DESIGN §3.2 PIP, §3.5). Resolves the principal's
@@ -31,12 +32,15 @@ export class HttpPipClient implements PipClient {
   private readonly cache: TtlLruCache<EffectivePrincipal>;
   /** In-flight fetches keyed by cache key — single-flight to prevent stampede. */
   private readonly inFlight = new Map<string, Promise<EffectivePrincipal>>();
+  /** Per-request PIP fetch timeout (ms) — bound a hung PAP, fail-closed (D8). */
+  private readonly timeoutMs: number;
 
   constructor(@Inject(AUTHZ_OPTIONS) private readonly options: AuthzModuleOptions) {
     this.cache = new TtlLruCache<EffectivePrincipal>(
       options.pipCacheMaxEntries ?? DEFAULT_MAX_ENTRIES,
       options.pipCacheTtlMs ?? DEFAULT_TTL_MS,
     );
+    this.timeoutMs = options.pipTimeoutMs ?? DEFAULT_PIP_TIMEOUT_MS;
   }
 
   public async resolve(
@@ -87,10 +91,26 @@ export class HttpPipClient implements PipClient {
     url.searchParams.set('tenantId', tenantId);
     url.searchParams.set('scope', scope);
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: { accept: 'application/json' },
-    });
+    // Bound the call so a hung PAP cannot stall the PEP (and, on the sensitive
+    // path, cannot pin the RLS-scoped Postgres transaction). On timeout fetch
+    // rejects with a TimeoutError/AbortError, which propagates up so the PEP
+    // denies — fail-closed (DESIGN §9 D8). We never fabricate a principal.
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'GET',
+        headers: { accept: 'application/json' },
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
+    } catch (err) {
+      if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+        throw new Error(
+          `PIP resolve timed out after ${String(this.timeoutMs)}ms for ` +
+            `${userId}@${tenantId} (${scope})`,
+        );
+      }
+      throw err;
+    }
     if (!response.ok) {
       throw new Error(
         `PIP resolve failed: ${String(response.status)} for ${userId}@${tenantId} (${scope})`,

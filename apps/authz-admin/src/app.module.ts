@@ -1,5 +1,12 @@
-import { type MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
+import {
+  type MiddlewareConsumer,
+  Module,
+  type NestModule,
+  RequestMethod,
+} from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
+
+import { IdentityContextMiddleware } from '@authz/pep';
 
 import { ConfigModule } from './config/config.module';
 import { HealthModule } from './health/health.module';
@@ -27,6 +34,17 @@ import { SharedModule } from './shared/shared.module';
  *
  * Global APP_INTERCEPTORs: RLS (opens the tenant-scoped tx) then logging.
  * GlobalExceptionFilter is bound in main.ts so it can run for filter-level errors.
+ *
+ * Middleware: RequestContextMiddleware assigns a trace id everywhere. The PEP's
+ * IdentityContextMiddleware (from @authz/pep, wired via SharedModule's AUTHZ_OPTIONS)
+ * VERIFIES the gateway-signed internal identity token and populates
+ * `req.authzPrincipal` (tenant/actor/platform-admin) for the human-facing IAM
+ * surfaces, so the PAP — the IAM control plane — never trusts plaintext identity
+ * headers (DESIGN §5, §7). It is excluded from:
+ *   - `/health` (unauthenticated liveness/readiness — orchestrators have no token);
+ *   - the PIP `/v1/principals/*` endpoint, a TRUSTED service-to-service read the
+ *     Expense PEP calls with a `tenantId` QUERY param and NO internal identity token
+ *     (it uses PipTenantContextGuard instead, DESIGN §3.2/§6).
  */
 @Module({
   imports: [
@@ -52,5 +70,14 @@ import { SharedModule } from './shared/shared.module';
 export class AppModule implements NestModule {
   public configure(consumer: MiddlewareConsumer): void {
     consumer.apply(RequestContextMiddleware).forRoutes('*');
+    consumer
+      .apply(IdentityContextMiddleware)
+      // Health is public; the PIP principal-resolution endpoint is a trusted S2S
+      // read with no internal identity token (it binds tenant from its query param).
+      .exclude(
+        { path: 'health', method: RequestMethod.ALL },
+        { path: 'v1/principals/(.*)', method: RequestMethod.ALL },
+      )
+      .forRoutes('*');
   }
 }

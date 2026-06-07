@@ -14,7 +14,7 @@
   "scripts": {
     "build": "tsc -b tsconfig.json",
     "typecheck": "tsc -b tsconfig.json",
-    "test": "jest --passWithNoTests"
+    "test": "jest --config jest.config.js --passWithNoTests"
   },
   "dependencies": {
     "@cerbos/grpc": "^0.27.1",

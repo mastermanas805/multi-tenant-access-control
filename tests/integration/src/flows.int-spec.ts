@@ -1,6 +1,12 @@
 import request from 'supertest';
 
-import { INTERNAL_IDENTITY_HEADER, internalIdentityToken } from './helpers/identity-token';
+import {
+  INTERNAL_IDENTITY_HEADER,
+  INTERNAL_IDENTITY_SIGNATURE_HEADER,
+  internalIdentityHeaders,
+  internalIdentityToken,
+  internalIdentitySignature,
+} from './helpers/identity-token';
 import {
   ASSIGN_RIYA,
   EXPENSE_ACME_LARGE,
@@ -33,9 +39,13 @@ describe('Enforcement flows (real PEP -> Cerbos -> PIP + RLS)', () => {
 
   /** Approves `expenseId` as `sub`@Acme through the real PEP; returns the supertest response. */
   function approve(expenseId: string, sub: string): request.Test {
+    const args = { sub, tid: TENANT_ACME };
     return request(stack.expenseUrl)
       .post(`/v1/expenses/${expenseId}/approve`)
-      .set(INTERNAL_IDENTITY_HEADER, internalIdentityToken({ sub, tid: TENANT_ACME }))
+      // The PEP runs the PRODUCTION signature-verification path, so send BOTH the
+      // claims header and the HS256 JWS signature the gateway would mint (DESIGN §7).
+      .set(INTERNAL_IDENTITY_HEADER, internalIdentityToken(args))
+      .set(INTERNAL_IDENTITY_SIGNATURE_HEADER, internalIdentitySignature(args))
       .send({});
   }
 
@@ -100,11 +110,12 @@ describe('Enforcement flows (real PEP -> Cerbos -> PIP + RLS)', () => {
     expect(before.status).toBe(200);
     expect(before.body.status).toBe('approved');
 
-    // Revoke through the REAL PAP HTTP API (x-tenant-id = the verified-JWT tid).
+    // Revoke through the REAL PAP HTTP API. Granting/revoking is now platform-admin-
+    // only and authorized from the VERIFIED signed token (DESIGN §6/§7), so send the
+    // signed internal token for the org-admin `dev`@Acme WITH the platform-admin claim.
     const revoke = await request(stack.papUrl)
       .post(`/v1/role-assignments/${ASSIGN_RIYA}/revoke`)
-      .set('x-tenant-id', TENANT_ACME)
-      .set('x-actor-id', 'dev')
+      .set(internalIdentityHeaders({ sub: 'dev', tid: TENANT_ACME, platformAdmin: true }))
       .send({});
     expect([200, 204]).toContain(revoke.status);
 
@@ -113,9 +124,11 @@ describe('Enforcement flows (real PEP -> Cerbos -> PIP + RLS)', () => {
     // §3.5, §9.1) — well within the FR-8 staleness bound. We re-check a DIFFERENT
     // still-pending small expense (exp_42 was approved in case (a)); same dept,
     // amount < 10000, so a DENY can only be Riya's now-missing finance_manager role.
+    const afterArgs = { sub: USER_RIYA, tid: TENANT_ACME };
     const after = await request(stack.expenseUrl)
       .post(`/v1/expenses/${EXPENSE_ACME_SMALL}/approve`)
-      .set(INTERNAL_IDENTITY_HEADER, internalIdentityToken({ sub: USER_RIYA, tid: TENANT_ACME }))
+      .set(INTERNAL_IDENTITY_HEADER, internalIdentityToken(afterArgs))
+      .set(INTERNAL_IDENTITY_SIGNATURE_HEADER, internalIdentitySignature(afterArgs))
       .send({});
 
     // With Riya's finance_manager grant gone, the PIP returns no roles, so the
@@ -133,7 +146,10 @@ describe('Enforcement flows (real PEP -> Cerbos -> PIP + RLS)', () => {
     let items: { decision: string; resourceId: string; action: string }[] = [];
     while (Date.now() < deadline) {
       const res = await request(stack.auditUrl)
+        // The audit READ endpoint scopes to the caller's VERIFIED tenant (DESIGN
+        // §6/§7); send the signed token for an Acme caller reading its own log.
         .get(`/v1/audit/events?tenantId=${TENANT_ACME}&limit=100`)
+        .set(internalIdentityHeaders({ sub: 'dev', tid: TENANT_ACME }))
         .send();
       expect(res.status).toBe(200);
       items = res.body.items as typeof items;
@@ -149,8 +165,12 @@ describe('Enforcement flows (real PEP -> Cerbos -> PIP + RLS)', () => {
     expect(items.some((e) => e.decision === 'ALLOW' && e.action === 'approve')).toBe(true);
     expect(items.some((e) => e.decision === 'DENY' && e.action === 'approve')).toBe(true);
 
-    // The tamper-evident hash chain replays intact from genesis (DESIGN §10).
-    const verify = await request(stack.auditUrl).get('/v1/audit/events/verify').send();
+    // The tamper-evident hash chain replays intact from genesis (DESIGN §10). The
+    // verify read also runs behind the verifying middleware now (DESIGN §7).
+    const verify = await request(stack.auditUrl)
+      .get('/v1/audit/events/verify')
+      .set(internalIdentityHeaders({ sub: 'dev', tid: TENANT_ACME }))
+      .send();
     expect(verify.status).toBe(200);
     expect(verify.body.valid).toBe(true);
     expect(verify.body.brokenAt).toBeNull();

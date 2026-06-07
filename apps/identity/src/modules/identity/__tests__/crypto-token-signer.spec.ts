@@ -62,6 +62,27 @@ describe('CryptoTokenSigner', () => {
     expect(verified).toBe(true);
   });
 
+  it('emits the platform-admin scope as the snake_case `platform_admin` claim (only when true)', () => {
+    const { token } = signer.signAccessToken(
+      { ...claims, platformAdmin: true },
+      1_000_000,
+      900,
+    );
+    const [, payloadB64] = jwtParts(token);
+    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+    // The wire claim is snake_case; the camelCase domain key never leaks.
+    expect(payload.platform_admin).toBe(true);
+    expect(payload).not.toHaveProperty('platformAdmin');
+  });
+
+  it('omits the platform_admin claim entirely for a non-admin token (fail-closed)', () => {
+    const { token } = signer.signAccessToken(claims, 1_000_000, 900);
+    const [, payloadB64] = jwtParts(token);
+    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+    expect(payload).not.toHaveProperty('platform_admin');
+    expect(payload).not.toHaveProperty('platformAdmin');
+  });
+
   it('detects a tampered payload (signature no longer verifies)', () => {
     const { token } = signer.signAccessToken(claims, 1_000_000, 900);
     const [headerB64, , signatureB64] = jwtParts(token);

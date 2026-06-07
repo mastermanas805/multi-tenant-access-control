@@ -33,6 +33,7 @@ PG_SUPER_PASS="${PG_SUPER_PASS:-authz}"
 
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:8080}"
 PAP_URL="${PAP_URL:-http://localhost:3000}"
+IDENTITY_URL="${IDENTITY_URL:-http://localhost:3200}"
 CERBOS_HTTP_URL="${CERBOS_HTTP_URL:-http://localhost:3592}"
 
 TENANT_ACME="aaaaaaaa-0000-4000-8000-000000000001"
@@ -101,8 +102,20 @@ wait_for_http "http://localhost:3200/health" "identity"
 wait_for_http "http://localhost:3300/health" "expense"
 wait_for_http "$GATEWAY_URL/health" "gateway"
 
-# 4) Publish the demo policy through the PAP (dynamic — NOT pre-baked) --------
-log "publishing the demo expense_report policy through the PAP ..."
+# 4) Publish the demo policy through the GATEWAY (dynamic — NOT pre-baked) -----
+# The PAP now derives identity from the VERIFIED gateway-signed internal token
+# (DESIGN §6/§7), so we publish THROUGH the gateway as the org-admin Dev rather
+# than posting raw x-tenant-id headers straight to the PAP. The gateway validates
+# Dev's JWT (which carries the platform_admin scope) and mints the signed token the
+# PAP verifies. This is the real customer path, not a test-only shortcut.
+log "logging in as Dev (org_admin) to publish the demo policy through the gateway ..."
+ADMIN_TOKEN=$(curl -sS -X POST "$IDENTITY_URL/v1/auth/token" \
+  -H 'content-type: application/json' \
+  -d '{"email":"dev@acme.com","password":"Password123!"}' | jq -r .accessToken) \
+  || die "admin login request failed"
+[ -n "$ADMIN_TOKEN" ] && [ "$ADMIN_TOKEN" != "null" ] || die "admin login did not return an access token"
+
+log "publishing the demo expense_report policy through the gateway ..."
 PUBLISH_BODY=$(cat <<JSON
 {
   "scope": "acme.finance",
@@ -128,10 +141,9 @@ PUBLISH_BODY=$(cat <<JSON
 JSON
 )
 HTTP_CODE=$(curl -sS -o /tmp/bootstrap-publish.json -w '%{http_code}' \
-  -X POST "$PAP_URL/v1/policies" \
+  -X POST "$GATEWAY_URL/v1/policies" \
   -H 'content-type: application/json' \
-  -H "x-tenant-id: $TENANT_ACME" \
-  -H 'x-actor-id: dev' \
+  -H "authorization: Bearer $ADMIN_TOKEN" \
   -d "$PUBLISH_BODY") || die "policy publish request failed"
 case "$HTTP_CODE" in
   201|200) log "policy published (HTTP $HTTP_CODE)";;

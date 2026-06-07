@@ -7,6 +7,23 @@ describe('resolveRoute (routing table — DESIGN §4.1)', () => {
     expect(resolveRoute('/auth')).toEqual({ upstream: 'identity', requiresAuth: false });
   });
 
+  it('routes /v1/auth/* to identity as a PUBLIC route (the SPA logs in via /v1)', () => {
+    expect(resolveRoute('/v1/auth/token')).toEqual({ upstream: 'identity', requiresAuth: false });
+    expect(resolveRoute('/v1/auth/refresh')).toEqual({
+      upstream: 'identity',
+      requiresAuth: false,
+    });
+  });
+
+  it('routes /v1/audit* to audit (authenticated decision-log read)', () => {
+    expect(resolveRoute('/v1/audit')).toEqual({ upstream: 'audit', requiresAuth: true });
+    expect(resolveRoute('/v1/audit/events')).toEqual({ upstream: 'audit', requiresAuth: true });
+    expect(resolveRoute('/v1/audit/events/verify')).toEqual({
+      upstream: 'audit',
+      requiresAuth: true,
+    });
+  });
+
   it('routes /v1/expenses* to expense (authenticated)', () => {
     expect(resolveRoute('/v1/expenses')).toEqual({ upstream: 'expense', requiresAuth: true });
     expect(resolveRoute('/v1/expenses/42')).toEqual({ upstream: 'expense', requiresAuth: true });

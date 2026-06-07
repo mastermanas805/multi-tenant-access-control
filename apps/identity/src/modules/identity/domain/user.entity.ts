@@ -11,6 +11,13 @@ export interface UserProps {
   tenantId: string;
   name?: string;
   active: boolean;
+  /**
+   * Whether the account holds the PLATFORM-ADMIN scope (DESIGN §6 / App. A). This
+   * is an account-level authorization flag, distinct from per-tenant roles (which
+   * are still resolved downstream by the PIP — D4). The IdP mints it as the
+   * `platform_admin` claim so the control plane can verify it.
+   */
+  platformAdmin: boolean;
 }
 
 /** Snapshot used to rehydrate a User from the seed/persistence layer. */
@@ -21,6 +28,7 @@ export interface UserSnapshot {
   tenantId: string;
   name?: string;
   active?: boolean;
+  platformAdmin?: boolean;
 }
 
 /**
@@ -48,6 +56,7 @@ export class User extends AggregateRoot<UserProps> {
         tenantId: snapshot.tenantId,
         ...(snapshot.name !== undefined ? { name: snapshot.name } : {}),
         active: snapshot.active ?? true,
+        platformAdmin: snapshot.platformAdmin ?? false,
       },
       new UniqueEntityID(snapshot.id),
     );
@@ -77,5 +86,10 @@ export class User extends AggregateRoot<UserProps> {
 
   public get isActive(): boolean {
     return this.props.active;
+  }
+
+  /** Whether the account holds the platform-admin scope (DESIGN §6 / App. A). */
+  public get isPlatformAdmin(): boolean {
+    return this.props.platformAdmin;
   }
 }

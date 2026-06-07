@@ -19,8 +19,9 @@ const AUTHZ_ADMIN_V1_COLLECTIONS = [
  * Pure, framework-free routing logic (DESIGN §4.1 routing). Maps an inbound
  * request path to its upstream target. Authoritative routing rules:
  *
- *   /auth/*                                   -> identity     (PUBLIC — login/refresh)
+ *   /auth/*, /v1/auth/*                       -> identity     (PUBLIC — login/refresh)
  *   /v1/expenses, /v1/expenses/*              -> expense      (authenticated)
+ *   /v1/audit, /v1/audit/*                    -> audit        (authenticated)
  *   /v1/{tenants|org-units|roles|permissions
  *       |role-assignments|policies}[/*]       -> authz-admin  (authenticated)
  *   /admin/*                                  -> authz-admin  (authenticated)
@@ -32,8 +33,11 @@ const AUTHZ_ADMIN_V1_COLLECTIONS = [
 export function resolveRoute(path: string): RouteTarget | null {
   const normalized = normalizePath(path);
 
-  if (segmentMatch(normalized, '/auth')) {
-    // The auth surface is public: the user is acquiring a token (no identity yet).
+  // The auth surface is public: the user is acquiring a token (no identity yet).
+  // The identity service serves it under the versioned `/v1/auth/*` path, so the
+  // browser client (which speaks /v1) reaches it through the gateway; the legacy
+  // unversioned `/auth/*` is kept for back-compat with direct callers.
+  if (segmentMatch(normalized, '/auth') || segmentMatch(normalized, '/v1/auth')) {
     return { upstream: 'identity', requiresAuth: false };
   }
 
@@ -43,6 +47,13 @@ export function resolveRoute(path: string): RouteTarget | null {
 
   if (segmentMatch(normalized, '/v1/expenses')) {
     return { upstream: 'expense', requiresAuth: true };
+  }
+
+  // Read-only decision log for the demo explainer. The audit read endpoint scopes
+  // by the `?tenantId=` query (a service contract); the route is authenticated so
+  // only a holder of a valid JWT (e.g. the org_admin) can reach it at the edge.
+  if (segmentMatch(normalized, '/v1/audit')) {
+    return { upstream: 'audit', requiresAuth: true };
   }
 
   for (const collection of AUTHZ_ADMIN_V1_COLLECTIONS) {

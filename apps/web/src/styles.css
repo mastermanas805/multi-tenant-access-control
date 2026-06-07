@@ -1,0 +1,57 @@
+/* Near-zero styling on top of Pico.css (loaded via CDN in index.html, DESIGN §13).
+   Only a few demo-specific affordances: decision badges and outcome colouring. */
+
+.banner {
+  background: var(--pico-card-sectioning-background-color, #f6f8fa);
+  border-left: 4px solid var(--pico-primary, #1095c1);
+  padding: 0.6rem 0.9rem;
+  border-radius: 0.25rem;
+}
+
+.outcome {
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+}
+.outcome.allow ins {
+  color: #1a7f37;
+  text-decoration: none;
+  font-weight: 600;
+}
+.outcome.deny del {
+  color: #c0392b;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.badge.ALLOW {
+  background: #d8f3dc;
+  color: #1a7f37;
+}
+.badge.DENY {
+  background: #ffd6d6;
+  color: #c0392b;
+}
+.badge\.N\/A,
+.badge {
+  background: var(--pico-muted-border-color, #e3e3e3);
+}
+.badge.ALLOW,
+.badge.DENY {
+  /* keep the coloured variants above */
+}
+
+article {
+  margin-bottom: 1.25rem;
+}
+
+table small {
+  word-break: break-all;
+}

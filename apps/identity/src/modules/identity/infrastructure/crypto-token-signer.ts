@@ -45,7 +45,16 @@ export class CryptoTokenSigner implements TokenSigner {
     const expiresAt = nowSeconds + ttlSeconds;
 
     const header = { alg: 'RS256', typ: 'JWT', kid: this.kid };
-    const payload = { ...claims, iat: issuedAt, exp: expiresAt };
+    // Map the domain claim shape to the wire JWT. The platform-admin scope is
+    // emitted as the snake_case `platform_admin` claim (what the gateway verifier
+    // reads) ONLY when true — never the camelCase domain key, and never `false`.
+    const { platformAdmin, ...registered } = claims;
+    const payload = {
+      ...registered,
+      iat: issuedAt,
+      exp: expiresAt,
+      ...(platformAdmin === true ? { platform_admin: true } : {}),
+    };
 
     const signingInput = `${base64Url(JSON.stringify(header))}.${base64Url(
       JSON.stringify(payload),
