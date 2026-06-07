@@ -2,10 +2,9 @@ import { createPublicKey, createVerify, type JsonWebKey, type KeyObject } from '
 
 import { Inject, Injectable } from '@nestjs/common';
 
-import { type Clock, CLOCK } from '@kernel/core';
+import { type Clock, CLOCK, UnauthenticatedError } from '@kernel/core';
 
 import { ConfigService } from '../../../config/config.service';
-import { UnauthenticatedError } from '../../../shared/errors/unauthenticated.error';
 import { type AccessTokenClaims } from '../domain/access-token-claims';
 import { type TokenVerifier } from '../domain/token-verifier.port';
 import { type BearerToken } from '../domain/value-objects/bearer-token.vo';
@@ -104,6 +103,10 @@ export class JwksTokenVerifier implements TokenVerifier {
       tid,
       sid,
       ...(typeof claims.act === 'string' ? { act: claims.act } : {}),
+      // The platform-admin scope, when present, MUST be a real boolean `true` — any
+      // other shape (string "true", 1, etc.) is NOT honored (fail-closed: absence
+      // and a non-boolean both resolve to a non-admin principal downstream).
+      ...(claims.platform_admin === true ? { platformAdmin: true } : {}),
       ...(typeof claims.iss === 'string' ? { iss: claims.iss } : {}),
       ...(typeof claims.aud === 'string' ? { aud: claims.aud } : {}),
       exp,

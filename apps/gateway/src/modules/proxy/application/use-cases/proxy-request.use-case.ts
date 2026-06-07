@@ -1,12 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 
-import { NotFoundError } from '@kernel/core';
+import { NotFoundError, UnauthenticatedError } from '@kernel/core';
 
 import {
   type InternalTokenMinter,
   INTERNAL_TOKEN_MINTER,
 } from '../../../auth/domain/internal-token-minter.port';
-import { UnauthenticatedError } from '../../../../shared/errors/unauthenticated.error';
 import { buildForwardedHeaders } from '../../domain/forwarded-headers';
 import { resolveRoute } from '../../domain/route-table';
 import {
@@ -64,6 +63,10 @@ export class ProxyRequestUseCase {
               tid: command.identity.tid,
               actorId: command.identity.actorId,
               sessionId: command.identity.sessionId,
+              // Carry the verified platform-admin scope INTO the signed token so the
+              // PAP authorizes platform-wide surfaces against a value it can verify
+              // (DESIGN §6/§7). Omitted for a non-admin so the claim stays absent.
+              ...(command.identity.platformAdmin ? { platformAdmin: true } : {}),
             });
             return {
               internalIdentity: minted.headerValue,

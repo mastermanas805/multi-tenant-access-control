@@ -13,19 +13,10 @@ import {
   DomainError,
   ForbiddenError,
   NotFoundError,
+  UnauthenticatedError,
   ValidationError,
 } from '@kernel/core';
-
-/** The section-8.1 error envelope. Every 4xx/5xx response uses this shape. */
-export interface ErrorEnvelope {
-  error: {
-    code: string;
-    message: string;
-    reason?: string;
-    decisionId?: string;
-    traceId?: string;
-  };
-}
+import { type ErrorEnvelope } from '@contracts/core';
 
 /**
  * Maps thrown errors to HTTP + the DESIGN §8.1 error envelope:
@@ -113,6 +104,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     }
     if (error instanceof ValidationError) {
       return HttpStatus.BAD_REQUEST;
+    }
+    if (error instanceof UnauthenticatedError) {
+      // The PEP IdentityContextMiddleware throws this when the gateway-signed
+      // internal identity token is missing/invalid on the PAP's IAM surfaces (§7).
+      return HttpStatus.UNAUTHORIZED;
     }
     if (error instanceof ForbiddenError) {
       return HttpStatus.FORBIDDEN;

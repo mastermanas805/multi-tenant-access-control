@@ -51,6 +51,7 @@ const identity: GatewayIdentity = {
   tid: 'acme',
   sessionId: 'sess-1',
   actorId: 'user-1',
+  platformAdmin: false,
 };
 
 function makeUseCase(client: FakeUpstreamClient): ProxyRequestUseCase {

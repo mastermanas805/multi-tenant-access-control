@@ -17,6 +17,7 @@
     "migration:show": "pnpm run typeorm migration:show"
   },
   "dependencies": {
+    "@authz/pep": "workspace:*",
     "@contracts/core": "workspace:*",
     "@kernel/core": "workspace:*",
     "@nestjs/common": "^10.4.4",

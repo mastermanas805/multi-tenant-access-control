@@ -57,6 +57,10 @@ export class TokenPairFactory {
         act: sub,
         iss: this.policy.issuer,
         aud: this.policy.audience,
+        // Carry the account's platform-admin scope into the token (emitted as
+        // `platform_admin` only when true). Roles remain PIP-resolved (D4); this is
+        // the account-level admin flag the control plane verifies (DESIGN §6/§7).
+        ...(user.isPlatformAdmin ? { platformAdmin: true } : {}),
       },
       nowSeconds,
       this.policy.accessTokenTtlSeconds,

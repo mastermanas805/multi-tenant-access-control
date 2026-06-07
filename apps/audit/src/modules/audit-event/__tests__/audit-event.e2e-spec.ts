@@ -4,6 +4,7 @@ import { type INestApplication, ValidationPipe, VersioningType } from '@nestjs/c
 import { Test, type TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 
+import { identityHeaders } from '../../../../test/identity-header';
 import { AppModule } from '../../../app.module';
 import { GlobalExceptionFilter } from '../../../shared/presentation/global-exception.filter';
 import { AUDIT_EVENT_REPOSITORY } from '../domain/audit-event.repository.port';
@@ -19,6 +20,13 @@ describe('Audit module (e2e)', () => {
   let app: INestApplication;
   const tenantA = randomUUID();
   const tenantB = randomUUID();
+  // READ endpoints verify the gateway-signed internal token and scope the decision
+  // log to the caller's verified tenant (DESIGN §6/§7). callerA reads only tenant A;
+  // adminCaller (verified platform-admin) may read cross-tenant via ?tenantId=.
+  // The INGEST POST is a separate trust boundary and carries no identity token.
+  const callerA = identityHeaders({ tenantId: tenantA });
+  const callerB = identityHeaders({ tenantId: tenantB });
+  const adminCaller = identityHeaders({ tenantId: tenantA, platformAdmin: true });
 
   beforeAll(async () => {
     // DB disabled so DatabaseModule boots without Postgres.
@@ -115,7 +123,40 @@ describe('Audit module (e2e)', () => {
     expect(res.body.error.reason).toBe('audit_event_duplicate');
   });
 
-  it('filters the list by tenant', async () => {
+  it('rejects a read with no internal identity token (401 + envelope)', async () => {
+    const res = await request(app.getHttpServer()).get('/v1/audit/events').expect(401);
+    expect(res.body.error.code).toBe('unauthenticated');
+  });
+
+  it('scopes the list to the VERIFIED tenant, ignoring a foreign ?tenantId= attempt (403 — finding 3)', async () => {
+    // A tenant-A caller cannot read tenant B's decision log via the query string.
+    const res = await request(app.getHttpServer())
+      .get('/v1/audit/events')
+      .query({ tenantId: tenantB })
+      .set(callerA)
+      .expect(403);
+    expect(res.body.error.code).toBe('forbidden');
+  });
+
+  it('a tenant-A caller sees ONLY tenant-A events even with no ?tenantId= (verified-tenant scoping)', async () => {
+    // Seed a tenant-B event; the tenant-A caller must never see it.
+    await request(app.getHttpServer())
+      .post('/v1/audit/events')
+      .send(event({ tenantId: tenantB, resourceId: 'gx_scoped' }))
+      .expect(201);
+
+    const res = await request(app.getHttpServer())
+      .get('/v1/audit/events')
+      .set(callerA)
+      .expect(200);
+
+    expect(res.body.items.length).toBeGreaterThanOrEqual(1);
+    for (const item of res.body.items) {
+      expect(item.tenantId).toBe(tenantA);
+    }
+  });
+
+  it('filters the list by tenant for a verified platform-admin (cross-tenant read)', async () => {
     await request(app.getHttpServer())
       .post('/v1/audit/events')
       .send(event({ tenantId: tenantB, resourceId: 'gx_1' }))
@@ -124,10 +165,21 @@ describe('Audit module (e2e)', () => {
     const res = await request(app.getHttpServer())
       .get('/v1/audit/events')
       .query({ tenantId: tenantB })
+      .set(adminCaller)
       .expect(200);
 
     expect(res.body.items.length).toBeGreaterThanOrEqual(1);
     for (const item of res.body.items) {
+      expect(item.tenantId).toBe(tenantB);
+    }
+
+    // A tenant-B-scoped (non-admin) caller can read its own tenant directly too.
+    const ownRead = await request(app.getHttpServer())
+      .get('/v1/audit/events')
+      .query({ tenantId: tenantB })
+      .set(callerB)
+      .expect(200);
+    for (const item of ownRead.body.items) {
       expect(item.tenantId).toBe(tenantB);
     }
   });
@@ -136,6 +188,7 @@ describe('Audit module (e2e)', () => {
     const first = await request(app.getHttpServer())
       .get('/v1/audit/events')
       .query({ tenantId: tenantA, limit: 1 })
+      .set(adminCaller)
       .expect(200);
 
     expect(first.body.items).toHaveLength(1);
@@ -145,6 +198,7 @@ describe('Audit module (e2e)', () => {
     const second = await request(app.getHttpServer())
       .get('/v1/audit/events')
       .query({ tenantId: tenantA, limit: 1, cursor: first.body.nextCursor as string })
+      .set(adminCaller)
       .expect(200);
 
     expect(second.body.items).toHaveLength(1);
@@ -155,6 +209,7 @@ describe('Audit module (e2e)', () => {
   it('verifies the whole chain is intact', async () => {
     const res = await request(app.getHttpServer())
       .get('/v1/audit/events/verify')
+      .set(adminCaller)
       .expect(200);
 
     expect(res.body.valid).toBe(true);

@@ -30,6 +30,15 @@ module.exports = {
     '**/build/**',
     '**/coverage/**',
     '**/node_modules/**',
+    // The demo SPA (apps/web) is a browser/React project with its own
+    // self-contained, non-typed-linting ESLint config (apps/web/.eslintrc.cjs).
+    // The root config here is tuned for the Node/NestJS services and would fail
+    // on browser globals + JSX, so it is excluded from the root lint glob.
+    'apps/web/**',
+    // The Playwright suite (e2e/) is a standalone test project with its own
+    // tsconfig (not in the root parserOptions.project set) and Playwright/Node
+    // globals. It is type-checked via its own package script and excluded here.
+    'e2e/**',
   ],
   rules: {
     '@typescript-eslint/explicit-function-return-type': [

@@ -30,6 +30,10 @@ export class AuthenticateRequestUseCase {
       sessionId: claims.sid,
       // `act` marks the acting caller; a direct user login has act === sub (§7).
       actorId: claims.act ?? claims.sub,
+      // The verified platform-admin scope (absent -> false, fail-closed). Carried
+      // into the minted internal token so the PAP gates platform-wide surfaces on a
+      // value it can verify, not a client-settable header (DESIGN §6/§7).
+      platformAdmin: claims.platformAdmin === true,
     };
   }
 }

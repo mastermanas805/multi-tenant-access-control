@@ -19,6 +19,7 @@ export {
   ValidationError,
   ForbiddenError,
 } from './errors/domain-error';
+export { UnauthenticatedError } from './errors/unauthenticated-error';
 export { Guard, invariant } from './errors/guard';
 
 // Pagination

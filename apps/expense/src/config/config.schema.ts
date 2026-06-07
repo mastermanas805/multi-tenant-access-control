@@ -37,6 +37,24 @@ export const configSchema = z.object({
   // Audit service base URL — the AuditSink posts each decision record (allow AND
   // deny) here (DESIGN §8.7, FR-9).
   AUDIT_URL: z.string().default('http://localhost:3100'),
+  // Per-request PIP fetch timeout (ms). Bounds a hung PAP so it cannot stall the
+  // PEP or pin the RLS-scoped Postgres transaction — fail-closed (DESIGN §9 D8).
+  PIP_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
+
+  // --- Internal identity token verification (DESIGN §5, §7) ---
+  // The shared secret the gateway signs the internal identity token's HS256 JWS
+  // with (the gateway's INTERNAL_TOKEN_SECRET). When set, the PEP's
+  // IdentityContextMiddleware VERIFIES x-internal-identity-signature (iss + exp)
+  // and rejects (401) a missing/invalid signature — the production path. When
+  // empty (the default), the middleware runs the documented DEV/TEST placeholder
+  // that only base64url-decodes the claims, so the unit/e2e/integration suites
+  // (which inject the principal context without a real gateway hop) still pass.
+  // A boot guard below refuses to start in production with verification disabled.
+  INTERNAL_TOKEN_SECRET: z.string().default(''),
+  // Expected `iss` of the signed internal token — the gateway's INTERNAL_TOKEN_ISSUER.
+  INTERNAL_TOKEN_ISSUER: z.string().default('api-gateway'),
+  // Clock-skew tolerance (seconds) for the internal token's `exp` check.
+  INTERNAL_TOKEN_CLOCK_TOLERANCE_SECONDS: z.coerce.number().int().nonnegative().default(60),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
@@ -60,7 +78,30 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new Error(`Invalid environment configuration:\n${issues}`);
   }
   assertProductionDbCredentials(parsed.data, env);
+  assertProductionInternalTokenSecret(parsed.data);
   return parsed.data;
+}
+
+/**
+ * Refuses to boot when NODE_ENV=production and INTERNAL_TOKEN_SECRET is unset, so
+ * the PEP's IdentityContextMiddleware would fall back to the DEV/TEST placeholder
+ * that trusts an UNSIGNED `x-internal-identity` header. In production that is a
+ * confused-deputy hole: any caller that can reach the PEP could assert an arbitrary
+ * principal/tenant. Fail closed and demand the gateway's signing secret (DESIGN §7).
+ */
+function assertProductionInternalTokenSecret(config: AppConfig): void {
+  if (config.NODE_ENV !== 'production') {
+    return;
+  }
+  if (config.INTERNAL_TOKEN_SECRET.length === 0) {
+    throw new Error(
+      'Invalid environment configuration:\n  - INTERNAL_TOKEN_SECRET: ' +
+        'must be set in production so the PEP verifies the gateway-signed internal ' +
+        'identity token (refusing to boot with internal-token signature verification ' +
+        'disabled, which would trust unsigned identity headers). Set it to the ' +
+        "gateway's INTERNAL_TOKEN_SECRET.",
+    );
+  }
 }
 
 /**

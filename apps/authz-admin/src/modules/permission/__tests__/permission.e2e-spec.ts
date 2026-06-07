@@ -6,6 +6,7 @@ import request from 'supertest';
 
 import { type CursorPage, type PageQuery, makeCursorPage } from '@kernel/core';
 
+import { identityHeaders } from '../../../../test/identity-header';
 import { AppModule } from '../../../app.module';
 import { GlobalExceptionFilter } from '../../../shared/presentation/global-exception.filter';
 import { type Permission } from '../domain/permission.entity';
@@ -46,9 +47,12 @@ class InMemoryPermissionRepository implements PermissionRepository {
 describe('Permission module (e2e)', () => {
   let app: INestApplication;
   const tenantHeader = randomUUID();
-  // The global catalog is shared platform-wide: WRITES require the platform-admin
-  // claim placeholder (DESIGN §6 / App. A); reads stay broadly available.
-  const ADMIN = 'x-platform-admin';
+  // The global catalog is shared platform-wide: WRITES require the VERIFIED
+  // platform-admin claim (DESIGN §6 / App. A); reads stay broadly available.
+  // Identity flows via the signed internal token (DESIGN §5/§7): idHeader is a
+  // non-admin caller, adminHeader carries the verified platform-admin claim.
+  const idHeader = identityHeaders({ tenantId: tenantHeader });
+  const adminHeader = identityHeaders({ tenantId: tenantHeader, platformAdmin: true });
 
   beforeAll(async () => {
     // DB disabled so DatabaseModule boots without Postgres and RLS passes through.
@@ -83,7 +87,7 @@ describe('Permission module (e2e)', () => {
   it('rejects a catalog write from a non-platform-admin caller with 403', async () => {
     const res = await request(app.getHttpServer())
       .post('/v1/permissions')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ key: 'sneaky:catalog:write', description: 'should be blocked' })
       .expect(403);
     expect(res.body.error.code).toBe('forbidden');
@@ -92,8 +96,7 @@ describe('Permission module (e2e)', () => {
   it('creates and reads back a permission', async () => {
     const create = await request(app.getHttpServer())
       .post('/v1/permissions')
-      .set('x-tenant-id', tenantHeader)
-      .set(ADMIN, 'true')
+      .set(adminHeader)
       .send({ key: 'expense:report:approve', description: 'Approve an expense report' })
       .expect(201);
 
@@ -104,7 +107,7 @@ describe('Permission module (e2e)', () => {
     const id = create.body.id as string;
     const get = await request(app.getHttpServer())
       .get(`/v1/permissions/${id}`)
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .expect(200);
     expect(get.body.key).toBe('expense:report:approve');
   });
@@ -112,15 +115,13 @@ describe('Permission module (e2e)', () => {
   it('rejects a duplicate key with 409 + the error envelope', async () => {
     await request(app.getHttpServer())
       .post('/v1/permissions')
-      .set('x-tenant-id', tenantHeader)
-      .set(ADMIN, 'true')
+      .set(adminHeader)
       .send({ key: 'invoice:line:edit', description: 'Edit an invoice line' })
       .expect(201);
 
     const res = await request(app.getHttpServer())
       .post('/v1/permissions')
-      .set('x-tenant-id', tenantHeader)
-      .set(ADMIN, 'true')
+      .set(adminHeader)
       .send({ key: 'invoice:line:edit', description: 'Edit an invoice line (dup)' })
       .expect(409);
 
@@ -132,8 +133,7 @@ describe('Permission module (e2e)', () => {
   it('returns 400 + validation envelope for a malformed key', async () => {
     const res = await request(app.getHttpServer())
       .post('/v1/permissions')
-      .set('x-tenant-id', tenantHeader)
-      .set(ADMIN, 'true')
+      .set(adminHeader)
       .send({ key: 'NotValid', description: 'bad' })
       .expect(400);
     expect(res.body.error.code).toBe('validation_failed');
@@ -142,7 +142,7 @@ describe('Permission module (e2e)', () => {
   it('lists permissions for the catalog', async () => {
     const res = await request(app.getHttpServer())
       .get('/v1/permissions')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .expect(200);
 
     expect(Array.isArray(res.body.items)).toBe(true);

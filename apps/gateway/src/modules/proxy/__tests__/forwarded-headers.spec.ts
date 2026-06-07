@@ -13,6 +13,7 @@ const identity: GatewayIdentity = {
   tid: 'acme',
   sessionId: 'sess-1',
   actorId: 'user-1',
+  platformAdmin: false,
 };
 
 const injected = {
@@ -50,9 +51,17 @@ describe('buildForwardedHeaders (confused-deputy defense — DESIGN §7)', () =>
     expect(out[INTERNAL_IDENTITY_SIGNATURE_HEADER]).toBe('h.p.s');
   });
 
-  it('STRIPS a client-forged x-platform-admin (no self-elevation, fail-closed)', () => {
+  it('STRIPS a client-forged x-platform-admin for a NON-admin identity (no self-elevation, fail-closed)', () => {
     const out = buildForwardedHeaders({ 'x-platform-admin': 'true' }, identity, injected);
     expect(out[PLATFORM_ADMIN_HEADER]).toBeUndefined();
+  });
+
+  it('RE-DERIVES x-platform-admin from the verified identity (strips the client value, injects the true one)', () => {
+    const adminIdentity: GatewayIdentity = { ...identity, platformAdmin: true };
+    // The client forges a (here, coincidentally matching) value; it is stripped and
+    // replaced by the server-derived one. A non-admin client could never reach here.
+    const out = buildForwardedHeaders({ 'x-platform-admin': 'true' }, adminIdentity, injected);
+    expect(out[PLATFORM_ADMIN_HEADER]).toBe('true');
   });
 
   it('strips spoofable headers regardless of header-name casing', () => {

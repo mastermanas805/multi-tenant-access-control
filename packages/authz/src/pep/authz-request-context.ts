@@ -18,6 +18,14 @@ export interface AuthzPrincipalContext {
   readonly actorId: string;
   /** The end-user session id — the token `sessionId`. */
   readonly sessionId: string;
+  /**
+   * Whether the verified principal holds the PLATFORM-ADMIN scope — the token
+   * `platformAdmin` claim (DESIGN §6 / App. A). Sourced ONLY from the verified
+   * signed token, never a client header. An absent claim resolves to `false`
+   * (fail-closed): absence is never elevation. Read by the PAP's TenantContextGuard
+   * to gate platform-wide control-plane surfaces.
+   */
+  readonly platformAdmin: boolean;
 }
 
 /** Builds the principal context from a verified internal identity token. */
@@ -27,5 +35,7 @@ export function principalContextFromToken(token: InternalIdentityToken): AuthzPr
     tenantId: token.tid,
     actorId: token.actorId,
     sessionId: token.sessionId,
+    // Fail-closed: an absent claim is NOT platform-admin (absence is never elevation).
+    platformAdmin: token.platformAdmin === true,
   };
 }

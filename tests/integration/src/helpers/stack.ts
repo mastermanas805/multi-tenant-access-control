@@ -30,6 +30,11 @@ import {
   startCerbos,
   startPostgres,
 } from './containers';
+import {
+  INTERNAL_TOKEN_ISSUER,
+  INTERNAL_TOKEN_SECRET,
+  internalIdentityHeaders,
+} from './identity-token';
 import { DEMO_EXPENSE_POLICY_RULE, SCOPE_ACME_FINANCE, TENANT_ACME } from './seed-data';
 import { seedAuthzAdmin } from './seed-authz-admin';
 import { seedExpense } from './seed-expense';
@@ -270,6 +275,11 @@ export async function startStack(): Promise<RunningStack> {
     CERBOS_PUBLISH_ENABLED: 'true',
     CERBOS_POLICY_DIR: cerbos.policyDir,
     CERBOS_URL: `${cerbos.host}:${String(cerbos.grpcPort)}`,
+    // The PAP now VERIFIES the gateway-signed internal token (DESIGN §7) and refuses
+    // to boot in production without the secret. Drive the production path with the
+    // same shared secret/issuer the identity-token helper signs with.
+    INTERNAL_TOKEN_SECRET,
+    INTERNAL_TOKEN_ISSUER,
   });
   const pap = await bootApp(AuthzAdminAppModule, AuthzAdminFilter);
   restorePapEnv();
@@ -286,6 +296,11 @@ export async function startStack(): Promise<RunningStack> {
     DB_PASSWORD: PG_SUPERPASS,
     DB_DATABASE: 'audit',
     DB_SYNCHRONIZE: 'false',
+    // The audit READ endpoints now verify the gateway-signed internal token and
+    // scope the decision log to the caller's tenant (DESIGN §6/§7); the service
+    // refuses to boot in production without the secret. Same shared secret/issuer.
+    INTERNAL_TOKEN_SECRET,
+    INTERNAL_TOKEN_ISSUER,
   });
   const audit = await bootApp(AuditAppModule, AuditFilter);
   restoreAuditEnv();
@@ -308,19 +323,24 @@ export async function startStack(): Promise<RunningStack> {
     CERBOS_URL: `${cerbos.host}:${String(cerbos.grpcPort)}`,
     PAP_URL: pap.url,
     AUDIT_URL: audit.url,
+    // Drive the PRODUCTION internal-token signature-verification path (DESIGN §7):
+    // the PEP verifies x-internal-identity-signature against this shared secret, the
+    // same value the identity-token helper signs with.
+    INTERNAL_TOKEN_SECRET,
+    INTERNAL_TOKEN_ISSUER,
   });
   const expense = await bootApp(ExpenseAppModule, ExpenseFilter);
   restoreExpenseEnv();
 
   // (6) PUBLISH the demo policy through the PAP so Cerbos hot-reloads a REAL,
-  // runtime-defined rule (not pre-baked). x-tenant-id is the PAP's verified-JWT
-  // tid placeholder (DESIGN §6).
+  // runtime-defined rule (not pre-baked). The PAP now derives tenant/actor from the
+  // VERIFIED gateway-signed internal token (DESIGN §6/§7), so send the signed token
+  // for `dev`@Acme rather than plaintext x-tenant-id/x-actor-id headers.
   const publishRes = await fetch(`${pap.url}/v1/policies`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-tenant-id': TENANT_ACME,
-      'x-actor-id': 'dev',
+      ...internalIdentityHeaders({ sub: 'dev', tid: TENANT_ACME }),
     },
     body: JSON.stringify({
       scope: SCOPE_ACME_FINANCE,

@@ -12,6 +12,13 @@ export interface SeedUserConfig {
   password: string;
   tenantId: string;
   name?: string;
+  /**
+   * Whether this user holds the PLATFORM-ADMIN scope (DESIGN §6 / App. A). The IdP
+   * mints it as the `platform_admin` JWT claim so the gateway can carry it into the
+   * signed internal token and the PAP can authorize platform-wide surfaces against a
+   * verified value. Defaults to false (a normal user is never an admin).
+   */
+  platformAdmin?: boolean;
 }
 
 /**
@@ -38,7 +45,10 @@ const DEFAULT_SEED_USERS: readonly SeedUserConfig[] = [
     email: 'dev@acme.com',
     password: 'Password123!',
     tenantId: 'acme',
-    name: 'Dev (Engineer)',
+    name: 'Dev (Org Admin)',
+    // Dev drives the admin surfaces (role-assignment grant/revoke, tenant lifecycle),
+    // so the IdP marks the account platform-admin (DESIGN §6 / App. A).
+    platformAdmin: true,
   },
 ];
 
@@ -169,7 +179,7 @@ function toSeedUser(entry: unknown, index: number): SeedUserConfig {
     throw new Error(`SEED_USERS[${String(index)}] must be an object`);
   }
   const record = entry as Record<string, unknown>;
-  const { id, email, password, tenantId, name } = record;
+  const { id, email, password, tenantId, name, platformAdmin } = record;
   if (
     typeof id !== 'string' ||
     typeof email !== 'string' ||
@@ -184,5 +194,7 @@ function toSeedUser(entry: unknown, index: number): SeedUserConfig {
     password,
     tenantId,
     ...(typeof name === 'string' ? { name } : {}),
+    // Only a real boolean `true` grants the platform-admin scope (fail-closed).
+    ...(platformAdmin === true ? { platformAdmin: true } : {}),
   };
 }

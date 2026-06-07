@@ -18,4 +18,12 @@ export interface GatewayIdentity {
    * user-initiated login (DESIGN §7 token-exchange semantics).
    */
   readonly actorId: string;
+  /**
+   * Whether the verified principal holds the PLATFORM-ADMIN scope — the JWT
+   * `platform_admin` claim (DESIGN §6 / App. A). Derived ONLY from the verified
+   * user JWT, never a client header; the gateway carries it into the signed
+   * internal token so the PAP can authorize platform-wide surfaces. False when the
+   * claim is absent (fail-closed).
+   */
+  readonly platformAdmin: boolean;
 }

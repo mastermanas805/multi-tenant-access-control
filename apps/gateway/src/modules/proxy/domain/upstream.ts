@@ -1,5 +1,5 @@
 /** A named downstream service the gateway can route to. */
-export type UpstreamName = 'identity' | 'authz-admin' | 'expense';
+export type UpstreamName = 'identity' | 'authz-admin' | 'expense' | 'audit';
 
 /**
  * A resolved routing target: which upstream service, and whether the route

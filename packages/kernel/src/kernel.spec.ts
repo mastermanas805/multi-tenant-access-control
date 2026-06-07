@@ -1,9 +1,11 @@
 import {
   AggregateRoot,
   Cursor,
+  DomainError,
   DomainEvent,
   Guard,
   PageQuery,
+  UnauthenticatedError,
   UniqueEntityID,
   ValidationError,
   ValueObject,
@@ -75,5 +77,19 @@ describe('kernel building blocks', () => {
 
   it('Cursor round-trips opaque values', () => {
     expect(Cursor.decode(Cursor.encode('row-42'))).toBe('row-42');
+  });
+
+  it('UnauthenticatedError carries the stable `unauthenticated` code and a generic default message', () => {
+    const err = new UnauthenticatedError();
+    expect(err).toBeInstanceOf(DomainError);
+    expect(err.code).toBe('unauthenticated');
+    expect(err.message).toBe('Authentication required');
+    expect(err.reason).toBeUndefined();
+  });
+
+  it('UnauthenticatedError keeps the reason for logs while accepting a custom message', () => {
+    const err = new UnauthenticatedError('Authentication required', 'invalid_signature');
+    expect(err.reason).toBe('invalid_signature');
+    expect(err.code).toBe('unauthenticated');
   });
 });

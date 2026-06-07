@@ -27,19 +27,25 @@ Rationale for each lives in the design doc's **Tradeoffs & Decisions** table.
 
 - ✅ **Design document** — complete ([DESIGN.md](./DESIGN.md))
 - ✅ **Reference implementation** — runnable end-to-end (Node.js / TypeScript, NestJS, Cerbos, PostgreSQL + RLS)
+- ✅ **Demo UI** — Vite + React SPA (a thin client to the gateway); `docker compose up` → **http://localhost:8081**
+- ✅ **Test suite — GREEN across all four tiers** (typecheck · build · lint all pass): **45 suites / 221 unit · 11 suites / 74 service e2e · 3 suites / 19 Testcontainers integration · 6 files / 12 Playwright UI** — see [TESTING.md](./TESTING.md) and the [customer-flow → test matrix](./TESTING.md#customer-flow--test-mapping)
 
 ## Reference implementation
 
 A focused slice demonstrating the model end-to-end (depth over breadth):
 **API Gateway** (authN edge) · **Identity** (OIDC-style IdP) · **Authorization Admin**
 (PAP — publishes policies to Cerbos, serves the PIP) · **Expense** service (PEP →
-co-located Cerbos PDP) · **Audit** (tamper-evident hash chain) · **PostgreSQL** per
-service with **Row-Level Security** · `docker-compose` + a one-command bootstrap.
+co-located Cerbos PDP) · **Audit** (tamper-evident hash chain) · **Demo UI**
+(thin SPA → gateway) · **PostgreSQL** per service with **Row-Level Security** ·
+`docker-compose` + a one-command bootstrap.
 
-The canonical access-control cases ship as **executable integration tests** that run
-against **real Postgres + real Cerbos** (Testcontainers) — see
-[RUNNING.md](./RUNNING.md) to bring the stack up and run the demo, and
-`pnpm -w run test:integration` for the end-to-end suite.
+The canonical access-control cases ship as **executable tests** at four tiers —
+unit, per-service HTTP e2e, **Testcontainers integration** (real Postgres + real
+Cerbos, no mocks), and a full-stack **Playwright UI** suite that drives every
+customer flow through the real SPA → gateway → services. See
+[RUNNING.md](./RUNNING.md) to bring the stack up and run the demo,
+[CUSTOMER_FLOWS.md](./CUSTOMER_FLOWS.md) for every flow, and [TESTING.md](./TESTING.md)
+for the full test strategy and how to run each tier.
 
 ## Tech stack
 

@@ -72,12 +72,23 @@ Re-running `./scripts/bootstrap.sh` is safe (idempotent).
 
 | Service | URL | Swagger |
 |---|---|---|
+| **Demo UI (SPA)** | **http://localhost:8081** | — (thin client to the gateway) |
 | gateway (edge) | http://localhost:8080 | http://localhost:8080/docs |
 | identity (IdP) | http://localhost:3200 | http://localhost:3200/docs |
 | authz-admin (PAP) | http://localhost:3000 | http://localhost:3000/docs |
 | expense (PEP) | http://localhost:3300 | http://localhost:3300/docs |
 | audit | http://localhost:3100 | http://localhost:3100/docs |
 | cerbos (PDP) | grpc :3593 / http :3592 | — |
+
+### The Demo UI
+
+Once the stack is up, open **http://localhost:8081** for the Demo SPA
+([apps/web](./apps/web)) — a thin client to the gateway that **never makes authz
+decisions, it only reflects them** (DESIGN §13). Four screens: **Login / user
+switch** (Riya / Sam / Dev), **Expenses** (Approve → the server's 200 ALLOW / 403
+DENY + the PDP reason), **Admin** (Dev only — revoke/grant Riya's role, FR-8 live),
+and a **Decision-log** panel. The Approve button is shown even for users who will
+be denied — hiding it is UX, not security; the PEP is the real gate.
 
 ## The demo (DESIGN §11 — the canonical customer flows)
 
@@ -134,18 +145,20 @@ curl -sS -X POST http://localhost:3000/v1/role-assignments/0e000000-0000-4000-80
 
 ## Tests
 
-The same flows run automatically as **integration tests** against **real** Postgres
-+ **real** Cerbos via Testcontainers (no mocks) — the expense PEP, the PAP/PIP and
-the audit hash chain all run in-process against the containers, evaluating the
-runtime-published policy.
+Four tiers prove the platform end to end — unit, per-service HTTP e2e, Testcontainers
+integration (real Postgres + Cerbos), and a full-stack Playwright UI suite that drives
+**every** customer flow through the real Demo SPA. Full strategy, counts and the
+flow→tier matrix: **[TESTING.md](./TESTING.md)** (the per-flow detail is in
+**[CUSTOMER_FLOWS.md](./CUSTOMER_FLOWS.md)**).
 
 ```bash
-pnpm -w run typecheck      # all projects
+pnpm -w run typecheck          # all projects
 pnpm -w run build
 pnpm -w run lint
-pnpm -w run test           # unit
-pnpm -w run test:e2e       # per-service HTTP e2e
-pnpm -w run test:integration   # Testcontainers: real Postgres + Cerbos, flows (a)-(f) + gateway authN
+pnpm test                      # unit (45 suites / 221 tests)
+pnpm test:e2e                  # per-service HTTP e2e (11 suites / 74 tests)
+pnpm test:integration          # Testcontainers: real Postgres + Cerbos (3 suites / 19 tests)
+pnpm test:playwright           # full-stack UI e2e (6 files / 12 tests) — Docker required
 ```
 
 `test:integration` covers: (a) ALLOW $8,500 same-dept; (b) DENY $25,000 (ABAC);
@@ -153,6 +166,36 @@ pnpm -w run test:integration   # Testcontainers: real Postgres + Cerbos, flows (
 DENY (FR-8); (f) Postgres RLS isolation (Acme context sees no Globex rows in
 `org_units`/`roles`/`role_assignments`/`expenses`); plus the gateway authN edge
 (valid JWT -> 200, invalid -> 401, forged `x-tenant-id` ignored).
+
+### Full-stack UI tests (Playwright)
+
+`pnpm test:playwright` drives the real Demo SPA (**http://localhost:8081**) →
+gateway → the five services → Cerbos + Postgres in a real Chromium — no mocks.
+Its **global setup brings the whole compose stack up itself** (`docker compose up
+-d --build` + `scripts/bootstrap.sh`, Postgres remapped to host port `5544` so it
+never collides with a local `:5432`), waits for every `/health` endpoint **and**
+the runtime-published Cerbos policy to be effective, then **tears the stack down**
+(`docker compose down -v`) on completion. Every assertion checks both the visible
+UI **and** the captured server response (status + `decisionId`/`reason`).
+
+```bash
+# from the repo root (Docker must be available)
+pnpm test:playwright
+
+# first time only — install the browser
+pnpm --filter @tests/e2e-playwright exec playwright install --with-deps chromium
+
+# iterate against an already-running stack (skip the compose up/down)
+E2E_SKIP_STACK=1 pnpm test:playwright
+
+# open the HTML report
+pnpm --filter @tests/e2e-playwright run report
+```
+
+It covers every customer flow: auth (login as each seeded user + invalid creds →
+401), the ALLOW/ABAC-DENY/cross-tenant decisions, the RBAC denial (Sam), the FR-8
+live revoke→DENY→re-grant flip via the Admin screen, the decision-log (ALLOW +
+DENY), and the security-UX case (a denied click returns a real server 403).
 
 ## Teardown
 

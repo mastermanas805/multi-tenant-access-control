@@ -7,6 +7,7 @@ import request from 'supertest';
 import { type CursorPage, type PageQuery, makeCursorPage } from '@kernel/core';
 
 import { AppModule } from '../../../app.module';
+import { identityHeaders } from '../../../../test/identity-header';
 import { GlobalExceptionFilter } from '../../../shared/presentation/global-exception.filter';
 import { type Role } from '../domain/role.entity';
 import { type RoleRepository, ROLE_REPOSITORY } from '../domain/role.repository.port';
@@ -45,6 +46,9 @@ class InMemoryRoleRepository implements RoleRepository {
 describe('Role module (e2e)', () => {
   let app: INestApplication;
   const tenantHeader = randomUUID();
+  // Identity flows via the VERIFIED signed internal token (DESIGN §5/§6/§7); the
+  // raw UUID is kept for tenant-id assertions, idHeader carries it as the token.
+  const idHeader = identityHeaders({ tenantId: tenantHeader });
 
   beforeAll(async () => {
     // DB disabled so DatabaseModule boots without Postgres and RLS passes through.
@@ -81,7 +85,7 @@ describe('Role module (e2e)', () => {
   it('creates and reads back a role with its permissions', async () => {
     const create = await request(app.getHttpServer())
       .post('/v1/roles')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({
         key: 'finance_manager',
         scope: 'acme.finance',
@@ -98,7 +102,7 @@ describe('Role module (e2e)', () => {
     const id = create.body.id as string;
     const get = await request(app.getHttpServer())
       .get(`/v1/roles/${id}`)
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .expect(200);
     expect(get.body.scope).toBe('acme.finance');
   });
@@ -106,13 +110,13 @@ describe('Role module (e2e)', () => {
   it('rejects a duplicate key with 409 + the error envelope', async () => {
     await request(app.getHttpServer())
       .post('/v1/roles')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ key: 'auditor', scope: 'acme' })
       .expect(201);
 
     const res = await request(app.getHttpServer())
       .post('/v1/roles')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ key: 'auditor', scope: 'acme.finance' })
       .expect(409);
 
@@ -124,7 +128,7 @@ describe('Role module (e2e)', () => {
   it('returns 400 + validation envelope for a bad key', async () => {
     const res = await request(app.getHttpServer())
       .post('/v1/roles')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ key: 'Not Valid', scope: 'acme' })
       .expect(400);
     expect(res.body.error.code).toBe('validation_failed');
@@ -133,7 +137,7 @@ describe('Role module (e2e)', () => {
   it('grants then revokes a permission, bumping the version each time', async () => {
     const created = await request(app.getHttpServer())
       .post('/v1/roles')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ key: 'support_agent', scope: 'acme.support' })
       .expect(201);
 
@@ -141,7 +145,7 @@ describe('Role module (e2e)', () => {
 
     const granted = await request(app.getHttpServer())
       .post(`/v1/roles/${id}/permissions`)
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ permission: 'ticket:ticket:read' })
       .expect(200);
     expect(granted.body.permissions).toEqual(['ticket:ticket:read']);
@@ -149,7 +153,7 @@ describe('Role module (e2e)', () => {
 
     const revoked = await request(app.getHttpServer())
       .delete(`/v1/roles/${id}/permissions/ticket:ticket:read`)
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .expect(200);
     expect(revoked.body.permissions).toEqual([]);
     expect(revoked.body.version).toBe(3);
@@ -158,13 +162,13 @@ describe('Role module (e2e)', () => {
   it('rejects re-granting an existing permission with 409 + reason', async () => {
     const created = await request(app.getHttpServer())
       .post('/v1/roles')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ key: 'billing_admin', scope: 'acme.billing', permissions: ['invoice:invoice:read'] })
       .expect(201);
 
     const res = await request(app.getHttpServer())
       .post(`/v1/roles/${created.body.id as string}/permissions`)
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ permission: 'invoice:invoice:read' })
       .expect(409);
 

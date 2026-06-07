@@ -21,6 +21,8 @@ export class ConfigUpstreamRegistry implements UpstreamRegistry {
         return this.config.values.AUTHZ_ADMIN_URL;
       case 'expense':
         return this.config.values.EXPENSE_URL;
+      case 'audit':
+        return this.config.values.AUDIT_URL;
     }
   }
 }

@@ -7,6 +7,7 @@ import request from 'supertest';
 import { type CursorPage, type PageQuery, makeCursorPage } from '@kernel/core';
 
 import { AppModule } from '../../../app.module';
+import { identityHeaders } from '../../../../test/identity-header';
 import { GlobalExceptionFilter } from '../../../shared/presentation/global-exception.filter';
 import { type OrgUnit } from '../domain/org-unit.entity';
 import { type OrgUnitRepository, ORG_UNIT_REPOSITORY } from '../domain/org-unit.repository.port';
@@ -62,6 +63,9 @@ class InMemoryOrgUnitRepository implements OrgUnitRepository {
 describe('OrgUnit module (e2e)', () => {
   let app: INestApplication;
   const tenantHeader = randomUUID();
+  // Identity flows via the VERIFIED signed internal token (DESIGN §5/§6/§7); the
+  // raw UUID is kept for tenant-id assertions, idHeader carries it as the token.
+  const idHeader = identityHeaders({ tenantId: tenantHeader });
 
   beforeAll(async () => {
     // DB disabled so DatabaseModule boots without Postgres and RLS passes through.
@@ -96,7 +100,7 @@ describe('OrgUnit module (e2e)', () => {
   it('creates a root and a child, deriving the child path from the parent', async () => {
     const root = await request(app.getHttpServer())
       .post('/v1/org-units')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ segment: 'acme', name: 'Acme' })
       .expect(201);
 
@@ -106,7 +110,7 @@ describe('OrgUnit module (e2e)', () => {
 
     const child = await request(app.getHttpServer())
       .post('/v1/org-units')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ segment: 'finance', name: 'Finance', parentId: root.body.id as string })
       .expect(201);
 
@@ -114,7 +118,7 @@ describe('OrgUnit module (e2e)', () => {
 
     const get = await request(app.getHttpServer())
       .get(`/v1/org-units/${child.body.id as string}`)
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .expect(200);
     expect(get.body.path).toBe('acme.finance');
   });
@@ -122,13 +126,13 @@ describe('OrgUnit module (e2e)', () => {
   it('rejects a duplicate path with 409 + the error envelope', async () => {
     await request(app.getHttpServer())
       .post('/v1/org-units')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ segment: 'globex', name: 'Globex' })
       .expect(201);
 
     const res = await request(app.getHttpServer())
       .post('/v1/org-units')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ segment: 'globex', name: 'Globex Two' })
       .expect(409);
 
@@ -140,7 +144,7 @@ describe('OrgUnit module (e2e)', () => {
   it('returns 400 + validation envelope for a bad segment', async () => {
     const res = await request(app.getHttpServer())
       .post('/v1/org-units')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ segment: 'Not Valid', name: 'Bad' })
       .expect(400);
     expect(res.body.error.code).toBe('validation_failed');
@@ -149,25 +153,25 @@ describe('OrgUnit module (e2e)', () => {
   it('lists a subtree and moves a node, recomputing descendant paths', async () => {
     const corp = await request(app.getHttpServer())
       .post('/v1/org-units')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ segment: 'corp', name: 'Corp' })
       .expect(201);
 
     const sales = await request(app.getHttpServer())
       .post('/v1/org-units')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ segment: 'sales', name: 'Sales', parentId: corp.body.id as string })
       .expect(201);
 
     await request(app.getHttpServer())
       .post('/v1/org-units')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ segment: 'apac', name: 'APAC', parentId: sales.body.id as string })
       .expect(201);
 
     const subtree = await request(app.getHttpServer())
       .get('/v1/org-units?rootPath=corp.sales')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .expect(200);
     expect(subtree.body.items.map((i: { path: string }) => i.path)).toEqual([
       'corp.sales',
@@ -177,7 +181,7 @@ describe('OrgUnit module (e2e)', () => {
     // Move corp.sales -> root, descendant apac rebases under the new path.
     const moved = await request(app.getHttpServer())
       .post(`/v1/org-units/${sales.body.id as string}/move`)
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ newParentId: null })
       .expect(200);
     expect(moved.body.path).toBe('sales');
@@ -185,7 +189,7 @@ describe('OrgUnit module (e2e)', () => {
 
     const afterMove = await request(app.getHttpServer())
       .get('/v1/org-units?rootPath=sales')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .expect(200);
     expect(afterMove.body.items.map((i: { path: string }) => i.path)).toEqual([
       'sales',

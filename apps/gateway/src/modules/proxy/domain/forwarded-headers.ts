@@ -94,6 +94,14 @@ export function buildForwardedHeaders(
     out[INTERNAL_IDENTITY_SIGNATURE_HEADER] = injected.internalIdentitySignature;
     out[TENANT_CONTEXT_HEADER] = identity.tid;
     out[ACTOR_CONTEXT_HEADER] = identity.actorId;
+    // Re-derive x-platform-admin from the VERIFIED identity (the client-sent value
+    // was stripped above). Set only when the principal is actually an admin, so the
+    // header's mere presence is never accidental. NOTE: this is a derived
+    // convenience/observability header — downstream PEPs (the PAP) authorize the
+    // platform-admin scope from the SIGNED internal token, not from this header (§7).
+    if (identity.platformAdmin) {
+      out[PLATFORM_ADMIN_HEADER] = 'true';
+    }
   }
 
   return out;

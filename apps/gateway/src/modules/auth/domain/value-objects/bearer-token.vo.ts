@@ -1,4 +1,4 @@
-import { UnauthenticatedError } from '../../../../shared/errors/unauthenticated.error';
+import { UnauthenticatedError } from '@kernel/core';
 
 /**
  * The raw compact JWT extracted from an `Authorization: Bearer <token>` header.

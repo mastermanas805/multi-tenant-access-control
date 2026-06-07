@@ -70,8 +70,28 @@ export const configSchema = z
     AUTHZ_ADMIN_URL: z.string().url().default('http://authz-admin:3000'),
     /** Expense service base URL — receives /v1/expenses*. */
     EXPENSE_URL: z.string().url().default('http://expense:3300'),
+    /** Audit service base URL — receives /v1/audit* (read-only decision log). */
+    AUDIT_URL: z.string().url().default('http://audit:3100'),
     /** Upstream request timeout in milliseconds (fail-fast, DESIGN §9). */
     UPSTREAM_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+
+    // --- Browser CORS (DESIGN §13 Demo UI — the SPA calls the gateway directly) -
+    /**
+     * Comma-separated list of browser origins allowed to call the gateway with
+     * credentials/Authorization. The demo SPA is served on its own origin (nginx),
+     * so the browser sends a CORS preflight before the cross-origin token/approve
+     * calls. Empty disables CORS entirely (server-to-server only). Defaults to the
+     * compose web origin; production sets its real SPA origin(s).
+     */
+    CORS_ALLOWED_ORIGINS: z
+      .string()
+      .default('http://localhost:5173,http://localhost:8081')
+      .transform((v) =>
+        v
+          .split(',')
+          .map((o) => o.trim())
+          .filter((o) => o.length > 0),
+      ),
 
     // --- Rate limiting (DESIGN §4.4, §10 — edge DoS protection) ----------------
     /** Enable the fixed-window per-client rate limiter. */

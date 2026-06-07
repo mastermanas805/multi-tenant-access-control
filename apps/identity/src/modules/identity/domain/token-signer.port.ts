@@ -17,6 +17,12 @@ export interface AccessTokenClaims {
   iss: string;
   /** Audience — the API the token is minted for. */
   aud: string;
+  /**
+   * Platform-admin scope (DESIGN §6 / App. A). The signer emits the `platform_admin`
+   * JWT claim ONLY when this is true, so a normal user's token simply omits it (the
+   * gateway + downstream control plane treat absence as not-an-admin, fail-closed).
+   */
+  platformAdmin?: boolean;
 }
 
 /** A signed token plus the absolute expiry the signer stamped into it. */

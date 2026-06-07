@@ -1,4 +1,5 @@
-import { UnauthenticatedError } from '../../../shared/errors/unauthenticated.error';
+import { UnauthenticatedError } from '@kernel/core';
+
 import { BearerToken } from '../domain/value-objects/bearer-token.vo';
 
 describe('BearerToken VO', () => {

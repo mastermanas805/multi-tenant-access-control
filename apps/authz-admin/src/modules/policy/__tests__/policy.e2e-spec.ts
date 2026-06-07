@@ -10,6 +10,7 @@ import { type CursorPage, type PageQuery, makeCursorPage } from '@kernel/core';
 
 import { AppModule } from '../../../app.module';
 import { TenantContextService } from '../../../shared/infrastructure/database/tenant-context';
+import { identityHeaders } from '../../../../test/identity-header';
 import { GlobalExceptionFilter } from '../../../shared/presentation/global-exception.filter';
 import { type Policy } from '../domain/policy.entity';
 import { type PolicyRepository, POLICY_REPOSITORY } from '../domain/policy.repository.port';
@@ -62,6 +63,9 @@ class InMemoryPolicyRepository implements PolicyRepository {
 describe('Policy module (e2e)', () => {
   let app: INestApplication;
   const tenantHeader = randomUUID();
+  // Identity flows via the VERIFIED signed internal token (DESIGN §5/§6/§7); the
+  // raw UUID is kept for tenant-id assertions, idHeader carries it as the token.
+  const idHeader = identityHeaders({ tenantId: tenantHeader });
 
   beforeAll(async () => {
     // DB disabled so DatabaseModule boots without Postgres and RLS passes through.
@@ -100,7 +104,7 @@ describe('Policy module (e2e)', () => {
   it('publishes a staged policy and reads it back', async () => {
     const publish = await request(app.getHttpServer())
       .post('/v1/policies')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({
         scope: 'acme.finance',
         rule: { effect: 'ALLOW', condition: 'amount < 10000' },
@@ -115,7 +119,7 @@ describe('Policy module (e2e)', () => {
     const id = publish.body.id as string;
     const get = await request(app.getHttpServer())
       .get(`/v1/policies/${id}`)
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .expect(200);
     expect(get.body.version).toBe(1);
     expect(get.body.rule).toEqual({ effect: 'ALLOW', condition: 'amount < 10000' });
@@ -124,7 +128,7 @@ describe('Policy module (e2e)', () => {
   it('activates a staged policy version', async () => {
     const publish = await request(app.getHttpServer())
       .post('/v1/policies')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({
         scope: 'acme.hr',
         rule: { effect: 'ALLOW' },
@@ -134,7 +138,7 @@ describe('Policy module (e2e)', () => {
 
     const res = await request(app.getHttpServer())
       .post(`/v1/policies/${publish.body.id as string}/activate`)
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .expect(200);
 
     expect(res.body.status).toBe('active');
@@ -144,13 +148,13 @@ describe('Policy module (e2e)', () => {
   it('bumps the monotonic version on a second publish of the same scope', async () => {
     await request(app.getHttpServer())
       .post('/v1/policies')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ scope: 'acme.ops', rule: { v: 1 }, effectiveDate: '2026-07-01T00:00:00.000Z' })
       .expect(201);
 
     const second = await request(app.getHttpServer())
       .post('/v1/policies')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ scope: 'acme.ops', rule: { v: 2 }, effectiveDate: '2026-08-01T00:00:00.000Z' })
       .expect(201);
 
@@ -160,19 +164,19 @@ describe('Policy module (e2e)', () => {
   it('rolls a scope back to a prior version as a new staged version', async () => {
     const v1 = await request(app.getHttpServer())
       .post('/v1/policies')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ scope: 'acme.legal', rule: { gen: 1 }, effectiveDate: '2026-07-01T00:00:00.000Z' })
       .expect(201);
 
     await request(app.getHttpServer())
       .post('/v1/policies')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ scope: 'acme.legal', rule: { gen: 2 }, effectiveDate: '2026-08-01T00:00:00.000Z' })
       .expect(201);
 
     const rolled = await request(app.getHttpServer())
       .post(`/v1/policies/${v1.body.id as string}/rollback`)
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ toVersion: 1 })
       .expect(200);
 
@@ -184,13 +188,13 @@ describe('Policy module (e2e)', () => {
   it('returns 409 + envelope when rolling back to a non-existent version', async () => {
     const created = await request(app.getHttpServer())
       .post('/v1/policies')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ scope: 'acme.support', rule: { x: 1 }, effectiveDate: '2026-07-01T00:00:00.000Z' })
       .expect(201);
 
     const res = await request(app.getHttpServer())
       .post(`/v1/policies/${created.body.id as string}/rollback`)
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ toVersion: 99 })
       .expect(409);
 
@@ -202,7 +206,7 @@ describe('Policy module (e2e)', () => {
   it('returns 400 + validation envelope for a malformed scope', async () => {
     const res = await request(app.getHttpServer())
       .post('/v1/policies')
-      .set('x-tenant-id', tenantHeader)
+      .set(idHeader)
       .send({ scope: 'Acme Finance', rule: {}, effectiveDate: '2026-07-01T00:00:00.000Z' })
       .expect(400);
     expect(res.body.error.code).toBe('validation_failed');

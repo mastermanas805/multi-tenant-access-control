@@ -1,0 +1,8 @@
+services:
+  postgres:
+    ports: !override
+      - '5544:5432'
+  gateway:
+    environment:
+      RATE_LIMIT_MAX: '100000'
+      RATE_LIMIT_WINDOW_MS: '60000'

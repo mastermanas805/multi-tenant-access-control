@@ -6,6 +6,7 @@ import request from 'supertest';
 
 import { type CursorPage, type PageQuery, makeCursorPage } from '@kernel/core';
 
+import { identityHeaders } from '../../../../test/identity-header';
 import { AppModule } from '../../../app.module';
 import { GlobalExceptionFilter } from '../../../shared/presentation/global-exception.filter';
 import { type Tenant } from '../domain/tenant.entity';
@@ -42,10 +43,13 @@ class InMemoryTenantRepository implements TenantRepository {
 
 describe('Tenant module (e2e)', () => {
   let app: INestApplication;
-  const tenantHeader = randomUUID();
-  // Tenant lifecycle is a PLATFORM-ADMIN surface (DESIGN §6 / App. A): every
-  // mutation/read carries the platform-admin claim placeholder header.
-  const ADMIN = 'x-platform-admin';
+  const tenantId = randomUUID();
+  // Identity now flows via the VERIFIED signed internal token (DESIGN §5/§6/§7), not
+  // raw x-tenant-id/x-platform-admin headers. `tenantHeader` is an authenticated but
+  // NON-admin caller; `adminHeader` carries the verified platform-admin claim.
+  // Tenant lifecycle is a PLATFORM-ADMIN surface (DESIGN §6 / App. A).
+  const tenantHeader = identityHeaders({ tenantId });
+  const adminHeader = identityHeaders({ tenantId, platformAdmin: true });
 
   beforeAll(async () => {
     // DB disabled so DatabaseModule boots without Postgres and RLS passes through.
@@ -82,19 +86,19 @@ describe('Tenant module (e2e)', () => {
     // able to enumerate, read, suspend or create tenants.
     const list = await request(app.getHttpServer())
       .get('/v1/tenants')
-      .set('x-tenant-id', tenantHeader)
+      .set(tenantHeader)
       .expect(403);
     expect(list.body.error.code).toBe('forbidden');
 
     await request(app.getHttpServer())
       .post('/v1/tenants')
-      .set('x-tenant-id', tenantHeader)
+      .set(tenantHeader)
       .send({ name: 'Sneaky', slug: 'sneaky' })
       .expect(403);
 
     await request(app.getHttpServer())
       .post(`/v1/tenants/${randomUUID()}/suspend`)
-      .set('x-tenant-id', tenantHeader)
+      .set(tenantHeader)
       .send({ reason: 'malicious' })
       .expect(403);
   });
@@ -102,8 +106,7 @@ describe('Tenant module (e2e)', () => {
   it('creates and reads back a tenant', async () => {
     const create = await request(app.getHttpServer())
       .post('/v1/tenants')
-      .set('x-tenant-id', tenantHeader)
-      .set(ADMIN, 'true')
+      .set(adminHeader)
       .send({ name: 'Acme Corporation', slug: 'acme' })
       .expect(201);
 
@@ -114,8 +117,7 @@ describe('Tenant module (e2e)', () => {
     const id = create.body.id as string;
     const get = await request(app.getHttpServer())
       .get(`/v1/tenants/${id}`)
-      .set('x-tenant-id', tenantHeader)
-      .set(ADMIN, 'true')
+      .set(adminHeader)
       .expect(200);
     expect(get.body.slug).toBe('acme');
   });
@@ -123,15 +125,13 @@ describe('Tenant module (e2e)', () => {
   it('rejects a duplicate slug with 409 + the error envelope', async () => {
     await request(app.getHttpServer())
       .post('/v1/tenants')
-      .set('x-tenant-id', tenantHeader)
-      .set(ADMIN, 'true')
+      .set(adminHeader)
       .send({ name: 'Globex', slug: 'globex' })
       .expect(201);
 
     const res = await request(app.getHttpServer())
       .post('/v1/tenants')
-      .set('x-tenant-id', tenantHeader)
-      .set(ADMIN, 'true')
+      .set(adminHeader)
       .send({ name: 'Globex Two', slug: 'globex' })
       .expect(409);
 
@@ -143,8 +143,7 @@ describe('Tenant module (e2e)', () => {
   it('returns 400 + validation envelope for a bad slug', async () => {
     const res = await request(app.getHttpServer())
       .post('/v1/tenants')
-      .set('x-tenant-id', tenantHeader)
-      .set(ADMIN, 'true')
+      .set(adminHeader)
       .send({ name: 'Bad', slug: 'Not Valid' })
       .expect(400);
     expect(res.body.error.code).toBe('validation_failed');
@@ -153,15 +152,13 @@ describe('Tenant module (e2e)', () => {
   it('suspends a tenant and emits the suspended state', async () => {
     const created = await request(app.getHttpServer())
       .post('/v1/tenants')
-      .set('x-tenant-id', tenantHeader)
-      .set(ADMIN, 'true')
+      .set(adminHeader)
       .send({ name: 'Initech', slug: 'initech' })
       .expect(201);
 
     const res = await request(app.getHttpServer())
       .post(`/v1/tenants/${created.body.id as string}/suspend`)
-      .set('x-tenant-id', tenantHeader)
-      .set(ADMIN, 'true')
+      .set(adminHeader)
       .send({ reason: 'Non-payment' })
       .expect(200);
 

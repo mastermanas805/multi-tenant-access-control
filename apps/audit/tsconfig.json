@@ -25,7 +25,8 @@
   },
   "references": [
     { "path": "../../packages/kernel" },
-    { "path": "../../packages/contracts" }
+    { "path": "../../packages/contracts" },
+    { "path": "../../packages/authz" }
   ],
   "include": ["src/**/*.ts", "test/**/*.ts"],
   "exclude": ["node_modules", "dist"]
