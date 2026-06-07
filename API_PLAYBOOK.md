@@ -1,10 +1,10 @@
 # API Playbook
 
-Three ways to drive the whole authorization platform end-to-end:
+Drive the whole authorization platform end-to-end. **Pick one:**
 
-1. **[Swagger UI](#explore-interactively)** — click through the API in the browser.
-2. **[Postman collection](#postman)** — import once; auto-logs-in and runs every flow.
-3. **[curl recipes](#1-authenticate)** — copy-paste below (every request verified against the live stack).
+- 🟢 **[Option A — Postman (easiest)](#opt-postman):** import the collection and click **Run**. It logs in, captures tokens, and runs every flow with pass/fail assertions — no other setup.
+- 🧰 **[Option B — curl (manual)](#opt-curl):** copy-paste the recipes below; every request is verified against the live stack.
+- 🔎 **Bonus — Swagger UI:** click through in the browser at `http://localhost:8080/docs` (Authorize with a token from §1).
 
 - **Design contracts:** [DESIGN.md §8](./DESIGN.md#s8) · **Customer flows:** [CUSTOMER_FLOWS.md](./CUSTOMER_FLOWS.md) · **Run the stack:** [RUNNING.md](./RUNNING.md)
 
@@ -43,10 +43,27 @@ export GW=http://localhost:8080
 
 ---
 
-## Explore interactively
+<a id="opt-postman"></a>
+## Option A — Postman (easiest)
 
-### Swagger UI
-Open in the browser and click **Authorize**, then paste a `Bearer <accessToken>` from §1:
+~30 seconds, no setup beyond import:
+
+1. **Import** both files from [`postman/`](./postman/) — in Postman, *Import* → drag both in:
+   - `postman/authz-platform.postman_collection.json`
+   - `postman/authz-platform.postman_environment.json`
+2. **Select** the **Authz Platform (local)** environment (top-right dropdown).
+3. Make sure the stack is up ([§0 Prerequisites](#0-prerequisites)).
+4. **Run the runner:** on the collection, **⋯ → Run**, then **Run Authz Platform**. The Collection Runner fires all 23 requests in order; the **0. Auth** folder logs in and captures the tokens, so every later request is pre-authorized.
+5. Every request asserts its expected result — login `200` · ALLOW `200` · ABAC `403` · isolation `404` · RBAC `403` · admin `201`/`403` · FR-8 revoke→deny→re-grant · policy publish `201` — all green.
+
+> Prefer clicking individual requests? Run **0. Auth → Login as Riya / Dev / Sam** once, then fire any request. (Re-bootstrap the stack for a clean `200` on the ALLOW case — re-approving an already-approved expense returns `409`.)
+
+The collection mirrors the curl recipes below 1:1 and already sets `content-type: application/json` on every call.
+
+<a id="opt-curl"></a>
+## Option B — curl (manual)
+
+The numbered sections below (§1 onward) are copy-paste `curl`. A **Swagger UI** is also live if you prefer clicking — open it and hit **Authorize** with a `Bearer <accessToken>` from §1:
 
 | Swagger UI | OpenAPI JSON |
 |---|---|
@@ -55,13 +72,6 @@ Open in the browser and click **Authorize**, then paste a `Bearer <accessToken>`
 | Expense (PEP): `http://localhost:3300/docs` | `http://localhost:3300/docs-json` |
 
 *(Authorization Admin and Audit are internal-only — reach them through the gateway.)*
-
-### Postman
-Import both files from [`postman/`](./postman/):
-- `postman/authz-platform.postman_collection.json`
-- `postman/authz-platform.postman_environment.json`
-
-Select the **Authz Platform (local)** environment, then run **0. Auth → Login as Riya/Dev/Sam** once — a test script captures each token into environment variables, so every other request is pre-authorized. Run the folders top to bottom, or "Run collection" to execute every flow.
 
 ---
 
