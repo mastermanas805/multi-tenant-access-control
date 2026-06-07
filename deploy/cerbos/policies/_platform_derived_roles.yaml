@@ -1,0 +1,41 @@
+# PLATFORM DEFAULT — derived roles (DESIGN §3, App. A; §9.3 role hierarchy).
+#
+# This file is a PLATFORM-SHIPPED default, NOT tenant rules. Tenant policies are
+# authored at RUNTIME via the PAP and DB-backed (DESIGN §3.1, §8.7); they are
+# compiled and written into this directory by the PAP. This file only provides
+# reusable derived-role definitions a compiled tenant policy MAY import to keep
+# rules small (contains role explosion via hierarchy, not flat enumeration —
+# DESIGN §9.3).
+#
+# Derived roles compute a contextual role from attributes (e.g. "owner",
+# "same-department") so resource rules can reference them instead of repeating CEL.
+
+apiVersion: api.cerbos.dev/v1
+derivedRoles:
+  name: platform_defaults
+  definitions:
+    # The principal owns the resource (ownership rules, DESIGN §3, App. A SoD).
+    - name: owner
+      parentRoles: ['*']
+      condition:
+        match:
+          expr: request.resource.attr.ownerId == request.principal.id
+
+    # The principal is in the same department as the resource (ABAC same-dept,
+    # DESIGN §3.1). Safe when both attrs are absent (evaluates false).
+    - name: same_department
+      parentRoles: ['*']
+      condition:
+        match:
+          expr: >-
+            has(request.resource.attr.department) &&
+            has(request.principal.attr.department) &&
+            request.resource.attr.department == request.principal.attr.department
+
+    # The principal and resource are in the same tenant (used by the base
+    # guardrail below; defense-in-depth with the PEP's cheap pre-check, DESIGN §6).
+    - name: same_tenant
+      parentRoles: ['*']
+      condition:
+        match:
+          expr: request.resource.attr.tenantId == request.principal.attr.tenantId

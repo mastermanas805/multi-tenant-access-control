@@ -1,0 +1,34 @@
+# PLATFORM DEFAULT — base (scope-less) policy for `expense_report` (DESIGN §3.1).
+#
+# ░░ THIS IS A PLATFORM-SHIPPED DEFAULT, *NOT* TENANT RULES. ░░
+# Tenant rules are authored at RUNTIME via the PAP, stored as DB jsonb, and
+# COMPILED into SCOPED resource policies (e.g. scope `acme.finance`) that the PAP
+# writes into this directory (DESIGN §3.1, §3.4, §8.7). Those scoped policies
+# INHERIT from this base (scope chain: acme.finance → acme → base). This file
+# only encodes the platform-wide, tenant-agnostic guardrail every tenant policy
+# sits on top of — it is illustrative of what the engine evaluates and is the only
+# expense_report policy that ships in the repo. Seed/demo only.
+#
+# The single rule here is the DENY-by-default tenant-isolation GUARDRAIL from
+# DESIGN §3.1: deny everything when the resource is not in the principal's tenant.
+# Because Cerbos uses DENY-overrides, this base DENY cannot be undone by a more
+# specific tenant ALLOW — cross-tenant access is impossible at the engine layer
+# (DESIGN §6 layer 2), complementing the PEP's cheap pre-check and Postgres RLS.
+
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  resource: expense_report
+  version: default
+  # No `scope:` → this is the BASE of the scope chain; tenant scoped policies
+  # inherit it (DESIGN §3.1 "inherits acme.finance → acme → base").
+  importDerivedRoles:
+    - platform_defaults
+  rules:
+    # Base guardrail (DESIGN §3.1): tenant isolation, deny-by-default across tenants.
+    - actions: ['*']
+      effect: EFFECT_DENY
+      roles: ['*']
+      name: tenant_isolation_guardrail
+      condition:
+        match:
+          expr: request.resource.attr.tenantId != request.principal.attr.tenantId

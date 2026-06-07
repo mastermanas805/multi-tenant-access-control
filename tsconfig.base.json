@@ -49,6 +49,8 @@
     "paths": {
       "@kernel": ["./packages/kernel/src/index.ts"],
       "@kernel/*": ["./packages/kernel/src/*"],
+      "@contracts/core": ["./packages/contracts/src/index.ts"],
+      "@authz/pep": ["./packages/authz/src/index.ts"],
       "@app/*": ["./apps/authz-admin/src/*"]
     }
   },

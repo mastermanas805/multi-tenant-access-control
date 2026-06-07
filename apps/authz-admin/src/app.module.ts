@@ -6,6 +6,7 @@ import { HealthModule } from './health/health.module';
 import { OrgUnitModule } from './modules/org-unit/org-unit.module';
 import { PermissionModule } from './modules/permission/permission.module';
 import { PolicyModule } from './modules/policy/policy.module';
+import { PrincipalModule } from './modules/principal/principal.module';
 import { RoleAssignmentModule } from './modules/role-assignment/role-assignment.module';
 import { RoleModule } from './modules/role/role.module';
 import { TenantModule } from './modules/tenant/tenant.module';
@@ -40,6 +41,7 @@ import { SharedModule } from './shared/shared.module';
     PolicyModule,
     RoleModule,
     RoleAssignmentModule,
+    PrincipalModule,
   ],
   providers: [
     { provide: APP_INTERCEPTOR, useClass: RlsInterceptor },

@@ -1,0 +1,43 @@
+# Cerbos PDP configuration (DESIGN §3.2 PDP, §3 D3, §8.7).
+#
+# Topology: Cerbos runs CO-LOCATED with each business service — a sidecar (or a
+# node-local DaemonSet at scale, DESIGN §9.2) reached over loopback, so a decision
+# is a sub-ms local call, never a network fan-out (DESIGN §3 D3, §9.1). In this
+# reference stack it is a single container the Expense service talks to.
+#
+# Storage: DISK with hot-reload. The PAP COMPILES each tenant's runtime-defined
+# rules into Cerbos resource-policy YAML and writes them into ./policies (mounted
+# into the container). `watchForChanges: true` makes the PDP hot-reload published
+# policies within seconds — no restart, no redeploy (DESIGN §3.4, §8.7, FR-8).
+
+server:
+  # gRPC for the SDK (CerbosPdpClient uses @cerbos/grpc → CERBOS_URL=cerbos:3593).
+  grpcListenAddr: ':3593'
+  # HTTP for health/REST and quick curl checks.
+  httpListenAddr: ':3592'
+
+storage:
+  driver: disk
+  disk:
+    # The PAP writes compiled tenant policies here at runtime; the platform-default
+    # policies below are seeded into the same tree. Bind-mounted in docker-compose.
+    directory: /policies
+    # Hot-reload on file changes so a published policy takes effect in seconds
+    # (DESIGN §3.4 — "PAP republishes bundle → PDP hot-reloads").
+    watchForChanges: true
+
+# Decision logging is the audit seam at the engine level (DESIGN §10, §11
+# "why denied?"); the PEP also emits its own DecisionAuditRecord to the Audit
+# service. Kept to stdout here for demoability.
+audit:
+  enabled: true
+  backend: local
+  local:
+    storagePath: /tmp/cerbos/audit.db
+
+# Schema enforcement is OFF: principal/resource attribute schemas are tenant- and
+# policy-driven (DESIGN §3.6 "policy-driven attribute schema"); the PEP supplies
+# attributes the active policies reference. Enable per-resource schemas later if a
+# tenant wants attribute validation at the PDP.
+schema:
+  enforcement: none

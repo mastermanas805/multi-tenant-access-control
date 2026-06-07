@@ -1,4 +1,4 @@
-import { ConflictError, NotFoundError } from '@kernel/core';
+import { ConflictError, DomainError, NotFoundError } from '@kernel/core';
 
 /** The requested policy does not exist (or is invisible under RLS). -> 404 */
 export class PolicyNotFoundError extends NotFoundError {
@@ -23,5 +23,22 @@ export class PolicyVersionNotFoundError extends ConflictError {
       `Policy version ${String(version)} not found for scope "${scope}"`,
       'policy_version_not_found',
     );
+  }
+}
+
+/**
+ * The published `rule` jsonb could not be compiled into a Cerbos resource policy
+ * (malformed body — missing resource/rules, bad effect, etc.). -> 422
+ *
+ * Extends DomainError directly so the GlobalExceptionFilter maps it to 422
+ * UNPROCESSABLE_ENTITY with this stable code (the body is syntactically valid JSON
+ * but semantically unprocessable as a policy). Fail-closed: a malformed rule never
+ * reaches the PDP (DESIGN §9 D8).
+ */
+export class PolicyCompileError extends DomainError {
+  public readonly code = 'policy_compile_failed';
+
+  constructor(message: string) {
+    super(message, 'policy_compile_failed');
   }
 }

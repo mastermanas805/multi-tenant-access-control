@@ -5,6 +5,7 @@ import { ConflictError, type Clock, CLOCK } from '@kernel/core';
 import { PolicyNotFoundError } from '../../domain/policy.errors';
 import { type PolicyRepository, POLICY_REPOSITORY } from '../../domain/policy.repository.port';
 import { PolicyId } from '../../domain/value-objects/policy-id.vo';
+import { type PolicyPublisher, POLICY_PUBLISHER } from '../ports/policy-publisher.port';
 import { type ActivatePolicyCommand } from '../dto/policy.commands';
 import { type PolicyView, toPolicyView } from '../dto/policy.view';
 
@@ -18,6 +19,7 @@ export class ActivatePolicyUseCase {
   constructor(
     @Inject(POLICY_REPOSITORY) private readonly policies: PolicyRepository,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(POLICY_PUBLISHER) private readonly publisher: PolicyPublisher,
   ) {}
 
   public async execute(command: ActivatePolicyCommand): Promise<PolicyView> {
@@ -33,6 +35,11 @@ export class ActivatePolicyUseCase {
 
     policy.activate(this.clock.now());
     await this.policies.save(policy);
+
+    // Activation is the point a version becomes the enforced rule for its scope,
+    // so (re)publish it to the PDP — the compiled YAML on disk now reflects the
+    // ACTIVE version, hot-reloaded within seconds (DESIGN §3.4). Fail-closed.
+    await this.publisher.publish(policy);
 
     return toPolicyView(policy);
   }

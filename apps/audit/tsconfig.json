@@ -1,0 +1,32 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "types": ["node", "jest"],
+    // `paths` here REPLACES (not merges) the base-config aliases, so re-declare
+    // the full set. Deviation from base: @contracts/core resolves to its EMITTED
+    // declarations rather than its `src` tree. The contracts barrel re-exports a
+    // deep module graph whose source would otherwise be pulled into THIS
+    // project's program under `tsc -b` (TS6059/TS6307 rootDir violations). The
+    // project reference below keeps contracts compiled by its OWN project; this
+    // alias points TS at that output. @kernel/core keeps the base `src` alias —
+    // it redirects cleanly. The jest moduleNameMapper still maps both to `src`
+    // (ts-jest single-file transpile has no rootDir program, so src is fine and
+    // avoids needing a prior build to run tests). Mirrors apps/authz-admin.
+    "paths": {
+      "@kernel": ["../../packages/kernel/src/index.ts"],
+      "@kernel/*": ["../../packages/kernel/src/*"],
+      "@contracts/core": ["../../packages/contracts/dist/index.d.ts"],
+      "@authz/pep": ["../../packages/authz/dist/index.d.ts"],
+      "@app/*": ["./src/*"]
+    }
+  },
+  "references": [
+    { "path": "../../packages/kernel" },
+    { "path": "../../packages/contracts" }
+  ],
+  "include": ["src/**/*.ts", "test/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

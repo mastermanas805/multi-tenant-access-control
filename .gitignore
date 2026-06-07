@@ -20,3 +20,17 @@ coverage/
 # OS
 .DS_Store
 Thumbs.db
+
+# Private signing keys — never commit; generate at bootstrap / via a key-gen script
+*-private.pem
+*.private.pem
+**/keys/*private*
+
+# Cerbos policies the PAP COMPILES + WRITES at runtime (the bootstrap / a publish
+# call generates these into the watched dir). They must NOT be committed — the
+# point is that tenant rules are published dynamically, not baked in. Only the
+# platform defaults (_platform_*) and the example_compiled_* reference file stay
+# tracked. (`git add -f` to override if ever needed.)
+deploy/cerbos/policies/*.yaml
+!deploy/cerbos/policies/_platform_*.yaml
+!deploy/cerbos/policies/example_compiled_*.yaml

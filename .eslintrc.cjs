@@ -3,7 +3,12 @@ module.exports = {
   root: true,
   parser: '@typescript-eslint/parser',
   parserOptions: {
-    project: ['./tsconfig.base.json', './packages/*/tsconfig.json', './apps/*/tsconfig.json'],
+    project: [
+      './tsconfig.base.json',
+      './packages/*/tsconfig.json',
+      './apps/*/tsconfig.json',
+      './tests/*/tsconfig.json',
+    ],
     tsconfigRootDir: __dirname,
     sourceType: 'module',
   },
@@ -66,13 +71,27 @@ module.exports = {
       },
     },
     {
-      files: ['**/*.spec.ts', '**/*.e2e-spec.ts'],
+      files: ['**/*.spec.ts', '**/*.e2e-spec.ts', '**/*.int-spec.ts'],
       rules: {
         '@typescript-eslint/no-unsafe-assignment': 'off',
         '@typescript-eslint/no-unsafe-member-access': 'off',
         '@typescript-eslint/no-unsafe-argument': 'off',
         '@typescript-eslint/no-unsafe-call': 'off',
         '@typescript-eslint/unbound-method': 'off',
+      },
+    },
+    {
+      // The integration harness boots the apps in-process and reshapes
+      // process.env per app; the DataSource-options bridges need a couple of
+      // `as never` casts at the config boundary. Relax the unsafe-* family for
+      // the harness helpers (still type-checked; just not strict-cast-clean).
+      files: ['tests/integration/src/helpers/**/*.ts'],
+      rules: {
+        '@typescript-eslint/no-unsafe-assignment': 'off',
+        '@typescript-eslint/no-unsafe-member-access': 'off',
+        '@typescript-eslint/no-unsafe-argument': 'off',
+        '@typescript-eslint/no-unsafe-call': 'off',
+        '@typescript-eslint/no-unsafe-return': 'off',
       },
     },
   ],

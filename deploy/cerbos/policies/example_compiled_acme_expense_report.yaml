@@ -1,0 +1,25 @@
+# EXAMPLE COMPILED ANCESTOR-SCOPE POLICY (DESIGN §3.1) — DEMO/SEED DATA ONLY.
+#
+# Cerbos requires every ancestor in a scope chain to exist: a policy scoped
+# `acme.finance` needs scopes `acme` and base to be present (DESIGN §3.1 chain
+# "acme.finance → acme → base"). When a tenant publishes a rule at a deep scope,
+# the PAP-publish step MUST also ensure each ANCESTOR scope policy exists — it
+# emits an empty passthrough policy for any missing ancestor (rules `[]`), so the
+# chain resolves and inheritance works. This file is that passthrough for `acme`.
+#
+# It carries no rules of its own: decisions fall through to `acme.finance`'s rules
+# and the base guardrail. Demo/seed; normally written by the PAP at runtime.
+
+apiVersion: api.cerbos.dev/v1
+metadata:
+  storeIdentifier: expense_report.acme.v1
+  annotations:
+    scope: acme
+    note: ancestor-scope passthrough emitted by the PAP-publish step
+resourcePolicy:
+  resource: expense_report
+  version: default
+  scope: acme
+  importDerivedRoles:
+    - platform_defaults
+  rules: []

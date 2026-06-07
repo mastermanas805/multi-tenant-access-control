@@ -6,6 +6,7 @@ import { ListPoliciesUseCase } from '../application/use-cases/list-policies.use-
 import { PublishPolicyUseCase } from '../application/use-cases/publish-policy.use-case';
 import { RollbackPolicyUseCase } from '../application/use-cases/rollback-policy.use-case';
 import { type PublishPolicyCommand } from '../application/dto/policy.commands';
+import { type PolicyPublisher } from '../application/ports/policy-publisher.port';
 import { Policy, PolicyStatus } from '../domain/policy.entity';
 import { PolicyPublishedEvent } from '../domain/policy.events';
 import {
@@ -46,6 +47,16 @@ describe('Policy use-cases', () => {
     return { dispatch: jest.fn().mockResolvedValue(undefined) };
   }
 
+  /**
+   * Publisher PORT mock — the application logic is exercised without a filesystem
+   * (the integration toggle / NoopPolicyPublisher does the same in DI). Records
+   * the published aggregate so the tests can assert the use-case publishes the
+   * compiled policy to the PDP (DESIGN §3.4).
+   */
+  function makePublisher(): PolicyPublisher {
+    return { publish: jest.fn().mockResolvedValue(undefined) };
+  }
+
   function makePolicy(version: number, status: PolicyStatus = PolicyStatus.Staged): Policy {
     const policy = Policy.publish({
       scope: PolicyScope.fromString('acme.finance'),
@@ -70,10 +81,11 @@ describe('Policy use-cases', () => {
   };
 
   describe('PublishPolicyUseCase', () => {
-    it('publishes a staged v1 for a brand-new scope, persists it, and dispatches the event', async () => {
+    it('publishes a staged v1 for a brand-new scope, persists it, publishes to the PDP, and dispatches the event', async () => {
       const repo = makeRepo();
       const dispatcher = makeDispatcher();
-      const useCase = new PublishPolicyUseCase(repo, clock, dispatcher);
+      const publisher = makePublisher();
+      const useCase = new PublishPolicyUseCase(repo, clock, dispatcher, publisher);
 
       const view = await useCase.execute(publishCommand);
 
@@ -85,6 +97,11 @@ describe('Policy use-cases', () => {
       expect(repo.save).toHaveBeenCalledTimes(1);
       const saved = (repo.save as jest.Mock).mock.calls[0][0] as Policy;
       expect(saved).toBeInstanceOf(Policy);
+
+      // The compiled version is published to the PDP so it becomes effective
+      // within seconds (DESIGN §3.4). The SAME persisted aggregate is published.
+      expect(publisher.publish).toHaveBeenCalledTimes(1);
+      expect((publisher.publish as jest.Mock).mock.calls[0][0]).toBe(saved);
 
       // PolicyPublishedEvent is pulled and dispatched AFTER persistence
       // (DESIGN §3.4 sequence), so the aggregate's own buffer is empty.
@@ -99,7 +116,7 @@ describe('Policy use-cases', () => {
 
     it('computes the next monotonic version from the latest for the scope', async () => {
       const repo = makeRepo({ findLatestForScope: jest.fn().mockResolvedValue(makePolicy(6)) });
-      const useCase = new PublishPolicyUseCase(repo, clock, makeDispatcher());
+      const useCase = new PublishPolicyUseCase(repo, clock, makeDispatcher(), makePublisher());
 
       const view = await useCase.execute(publishCommand);
 
@@ -109,7 +126,7 @@ describe('Policy use-cases', () => {
     it('rejects a malformed scope at the domain boundary', async () => {
       const repo = makeRepo();
       const dispatcher = makeDispatcher();
-      const useCase = new PublishPolicyUseCase(repo, clock, dispatcher);
+      const useCase = new PublishPolicyUseCase(repo, clock, dispatcher, makePublisher());
 
       await expect(useCase.execute({ ...publishCommand, scope: 'Acme Finance' })).rejects.toThrow();
       expect(repo.save).not.toHaveBeenCalled();
@@ -121,7 +138,7 @@ describe('Policy use-cases', () => {
     it('activates a staged version and persists it', async () => {
       const staged = makePolicy(3);
       const repo = makeRepo({ findById: jest.fn().mockResolvedValue(staged) });
-      const useCase = new ActivatePolicyUseCase(repo, clock);
+      const useCase = new ActivatePolicyUseCase(repo, clock, makePublisher());
 
       const view = await useCase.execute({ policyId: staged.id.toString() });
 
@@ -132,7 +149,7 @@ describe('Policy use-cases', () => {
 
     it('raises PolicyNotFoundError for an unknown id', async () => {
       const repo = makeRepo();
-      const useCase = new ActivatePolicyUseCase(repo, clock);
+      const useCase = new ActivatePolicyUseCase(repo, clock, makePublisher());
 
       await expect(
         useCase.execute({ policyId: '11111111-1111-4111-8111-111111111111' }),
@@ -143,7 +160,7 @@ describe('Policy use-cases', () => {
     it('rejects activating an already-active version with PolicyStatusError', async () => {
       const active = makePolicy(3, PolicyStatus.Active);
       const repo = makeRepo({ findById: jest.fn().mockResolvedValue(active) });
-      const useCase = new ActivatePolicyUseCase(repo, clock);
+      const useCase = new ActivatePolicyUseCase(repo, clock, makePublisher());
 
       await expect(useCase.execute({ policyId: active.id.toString() })).rejects.toBeInstanceOf(
         PolicyStatusError,
@@ -153,7 +170,7 @@ describe('Policy use-cases', () => {
     it('rejects a stale If-Match version with a version_mismatch conflict', async () => {
       const staged = makePolicy(3);
       const repo = makeRepo({ findById: jest.fn().mockResolvedValue(staged) });
-      const useCase = new ActivatePolicyUseCase(repo, clock);
+      const useCase = new ActivatePolicyUseCase(repo, clock, makePublisher());
 
       await expect(
         useCase.execute({ policyId: staged.id.toString(), expectedVersion: 2 }),
@@ -179,7 +196,7 @@ describe('Policy use-cases', () => {
         findLatestForScope: jest.fn().mockResolvedValue(current),
       });
       const dispatcher = makeDispatcher();
-      const useCase = new RollbackPolicyUseCase(repo, clock, dispatcher);
+      const useCase = new RollbackPolicyUseCase(repo, clock, dispatcher, makePublisher());
 
       const view = await useCase.execute({ policyId: current.id.toString(), toVersion: 6 });
 
@@ -198,7 +215,7 @@ describe('Policy use-cases', () => {
 
     it('raises PolicyNotFoundError when the source policy is missing', async () => {
       const repo = makeRepo();
-      const useCase = new RollbackPolicyUseCase(repo, clock, makeDispatcher());
+      const useCase = new RollbackPolicyUseCase(repo, clock, makeDispatcher(), makePublisher());
 
       await expect(
         useCase.execute({ policyId: '22222222-2222-4222-8222-222222222222', toVersion: 1 }),
@@ -211,7 +228,7 @@ describe('Policy use-cases', () => {
         findById: jest.fn().mockResolvedValue(current),
         findByScopeAndVersion: jest.fn().mockResolvedValue(null),
       });
-      const useCase = new RollbackPolicyUseCase(repo, clock, makeDispatcher());
+      const useCase = new RollbackPolicyUseCase(repo, clock, makeDispatcher(), makePublisher());
 
       await expect(
         useCase.execute({ policyId: current.id.toString(), toVersion: 99 }),

@@ -11,6 +11,7 @@ import { Policy } from '../../domain/policy.entity';
 import { PolicyNotFoundError, PolicyVersionNotFoundError } from '../../domain/policy.errors';
 import { type PolicyRepository, POLICY_REPOSITORY } from '../../domain/policy.repository.port';
 import { PolicyId } from '../../domain/value-objects/policy-id.vo';
+import { type PolicyPublisher, POLICY_PUBLISHER } from '../ports/policy-publisher.port';
 import { type RollbackPolicyCommand } from '../dto/policy.commands';
 import { type PolicyView, toPolicyView } from '../dto/policy.view';
 
@@ -26,6 +27,7 @@ export class RollbackPolicyUseCase {
     @Inject(POLICY_REPOSITORY) private readonly policies: PolicyRepository,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(DOMAIN_EVENT_DISPATCHER) private readonly dispatcher: IDomainEventDispatcher,
+    @Inject(POLICY_PUBLISHER) private readonly publisher: PolicyPublisher,
   ) {}
 
   public async execute(command: RollbackPolicyCommand): Promise<PolicyView> {
@@ -54,6 +56,10 @@ export class RollbackPolicyUseCase {
     });
 
     await this.policies.save(republished);
+
+    // Compile + publish the republished rule to the PDP so the rollback is
+    // effective within seconds (DESIGN §3.4). After persistence, fail-closed.
+    await this.publisher.publish(republished);
 
     // The republished version raises a PolicyPublishedEvent (via Policy.publish);
     // dispatch it after persistence (DESIGN §3.4 sequence).
