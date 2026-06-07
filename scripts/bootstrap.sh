@@ -194,6 +194,24 @@ else
   die "published policy did not become effective in Cerbos (see: docker compose logs cerbos)"
 fi
 
+# 6) Warm the request path so the FIRST demo call is reliable. The Cerbos restart
+# above drops the Expense PEP's gRPC channel to Cerbos and leaves its PIP cache
+# cold, so the very first request can fail-closed before the channel reconnects.
+# Give the channel a moment, then prime the path with non-mutating reads through
+# the gateway (as Riya) until an authorized read succeeds.
+log "warming the gateway -> PEP -> Cerbos path ..."
+sleep 3
+WARM_TOKEN=$(curl -sS -X POST "$IDENTITY_URL/v1/auth/token" -H 'content-type: application/json' \
+  -d '{"email":"riya@acme.com","password":"Password123!"}' 2>/dev/null | jq -r .accessToken)
+WARM_CODE=000
+for _ in $(seq 1 20); do
+  WARM_CODE=$(curl -sS -o /dev/null -w '%{http_code}' "$GATEWAY_URL/v1/expenses" \
+    -H "authorization: Bearer $WARM_TOKEN" 2>/dev/null || echo 000)
+  [ "$WARM_CODE" = "200" ] && break
+  sleep 1
+done
+log "request path warm (GET /v1/expenses -> $WARM_CODE)"
+
 cat <<DONE
 
 \033[1;32m[bootstrap] DONE — the stack is seeded and the demo policy is live.\033[0m
