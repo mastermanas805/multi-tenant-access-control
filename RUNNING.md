@@ -206,9 +206,14 @@ docker compose down -v     # stop everything and drop the Postgres volume
 ## Notes & troubleshooting
 
 - **Port 5432 already in use** — another Postgres (host or container) holds it.
-  Either stop it, or remap the compose Postgres host port and point the bootstrap at
-  it: add a `docker-compose.override.yml` with `postgres.ports: !override ['5544:5432']`
-  and run `PG_PORT=5544 ./scripts/bootstrap.sh`.
+  Either stop it, or run the stack on a different host port via the built-in
+  `PG_HOST_PORT` override (services talk to Postgres over the internal network either
+  way; this only changes the host-side port the bootstrap connects to):
+
+  ```bash
+  PG_HOST_PORT=5544 docker compose up -d        # bring the stack up on 5544
+  PG_PORT=5544 ./scripts/bootstrap.sh           # point the bootstrap at it
+  ```
 - **`expense`/`authz-admin` keep restarting before bootstrap** — expected
   (fail-closed until their unprivileged roles exist). They self-recover once the
   bootstrap has migrated.

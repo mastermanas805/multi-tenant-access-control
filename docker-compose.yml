@@ -17,7 +17,9 @@ services:
       POSTGRES_PASSWORD: authz
       POSTGRES_DB: authz_admin
     ports:
-      - '5432:5432'
+      # Host port is configurable so a local Postgres on 5432 doesn't collide:
+      #   PG_HOST_PORT=5544 docker compose up   (then bootstrap with PG_PORT=5544)
+      - '${PG_HOST_PORT:-5432}:5432'
     volumes:
       - authz-pgdata:/var/lib/postgresql/data
       # Creates the AUDIT service's separate `audit` database on first init
