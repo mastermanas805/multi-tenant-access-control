@@ -16,7 +16,8 @@
     "test": "pnpm -r run test",
     "test:e2e": "pnpm -r run test:e2e",
     "test:integration": "pnpm --filter @tests/integration run test:integration",
-    "test:playwright": "pnpm --filter @tests/e2e-playwright run test:playwright"
+    "test:playwright": "pnpm --filter @tests/e2e-playwright run test:playwright",
+    "gen:keys": "bash scripts/gen-dev-keys.sh"
   },
   "devDependencies": {
     "@types/jest": "^29.5.13",

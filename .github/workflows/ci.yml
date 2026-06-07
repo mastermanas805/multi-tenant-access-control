@@ -42,6 +42,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm gen:keys # dev RS256 keypair (git-ignored, generated on demand)
       - run: pnpm -w run test
       - run: pnpm -w run test:e2e
 
@@ -60,6 +61,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm gen:keys # dev RS256 keypair (git-ignored, generated on demand)
       - run: pnpm -w run build
       - run: pnpm -w run test:integration
 
@@ -78,6 +80,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm gen:keys # dev RS256 keypair before docker build (git-ignored)
       - run: pnpm --filter @tests/e2e-playwright exec playwright install --with-deps chromium
       - run: pnpm -w run test:playwright
       - name: Upload Playwright report

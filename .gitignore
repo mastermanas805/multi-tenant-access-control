@@ -21,10 +21,12 @@ coverage/
 .DS_Store
 Thumbs.db
 
-# Private signing keys — never commit; generate at bootstrap / via a key-gen script
+# Dev signing keys — never commit; generated on demand by `pnpm gen:keys`
+# (CI + bootstrap). The whole identity keypair is regenerated, not shipped.
 *-private.pem
 *.private.pem
 **/keys/*private*
+apps/identity/keys/*.pem
 
 # Cerbos policies the PAP COMPILES + WRITES at runtime (the bootstrap / a publish
 # call generates these into the watched dir). They must NOT be committed — the

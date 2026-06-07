@@ -1,12 +1,12 @@
 # Dev signing keypair — DO NOT USE IN PRODUCTION
 
-`dev-private.pem` / `dev-public.pem` is a **2048-bit RSA keypair committed as a
-development default** so the identity service boots and signs RS256 tokens out of
-the box (`pnpm --filter @app/identity start:dev`) with zero setup, and so the e2e
-suite is self-contained.
+`dev-private.pem` / `dev-public.pem` is a **2048-bit RSA keypair generated on
+demand** (never committed — both files are git-ignored) so the identity service
+boots and signs RS256 tokens out of the box with zero setup.
 
-This is a published keypair: anyone with this repo holds the private key. It is
-safe ONLY for local development and CI.
+**Generate it** with `pnpm gen:keys` (run automatically in CI and before the
+Docker build). It is regenerated as a matched pair if either file is missing, and
+is safe ONLY for local development and CI — it protects nothing.
 
 ## Production
 
