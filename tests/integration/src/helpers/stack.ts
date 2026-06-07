@@ -27,6 +27,7 @@ import {
   PG_SUPERUSER,
   type StartedCerbos,
   type StartedPostgres,
+  prepareCerbosPolicyDir,
   startCerbos,
   startPostgres,
 } from './containers';
@@ -200,7 +201,9 @@ async function waitForPolicyEffective(cerbosHttpUrl: string): Promise<void> {
  */
 export async function startStack(): Promise<RunningStack> {
   const postgres = await startPostgres();
-  const cerbos = await startCerbos();
+  // Prepare the policy dir (platform defaults only) up front; the PAP publishes the
+  // tenant rule into it, then Cerbos is started with everything loaded at boot (5d).
+  const policyDir = prepareCerbosPolicyDir();
 
   const superCommon = {
     DB_HOST: postgres.host,
@@ -276,8 +279,10 @@ export async function startStack(): Promise<RunningStack> {
     DB_APP_USERNAME: AUTHZ_APP_ROLE,
     DB_APP_PASSWORD: AUTHZ_APP_ROLE,
     CERBOS_PUBLISH_ENABLED: 'true',
-    CERBOS_POLICY_DIR: cerbos.policyDir,
-    CERBOS_URL: `${cerbos.host}:${String(cerbos.grpcPort)}`,
+    CERBOS_POLICY_DIR: policyDir,
+    // Cerbos is not up yet (it starts after publish, step 5d); the PAP publishes by
+    // WRITING a file (FsCerbosPolicyPublisher), so this URL is unused during publish.
+    CERBOS_URL: '127.0.0.1:3593',
     // The PAP now VERIFIES the gateway-signed internal token (DESIGN §7) and refuses
     // to boot in production without the secret. Drive the production path with the
     // same shared secret/issuer the identity-token helper signs with.
@@ -308,8 +313,36 @@ export async function startStack(): Promise<RunningStack> {
   const audit = await bootApp(AuditAppModule, AuditFilter);
   restoreAuditEnv();
 
-  // (5c) Boot the Expense PEP as the unprivileged role, wired to REAL Cerbos +
-  // the in-process PAP (PIP) + Audit (sink).
+  // (6) PUBLISH the demo policy through the PAP — BEFORE Cerbos starts. The PAP's
+  // FsCerbosPolicyPublisher WRITES the compiled YAML into policyDir (a file write; it
+  // does not need Cerbos running). The PAP derives tenant/actor from the VERIFIED
+  // gateway-signed internal token (DESIGN §6/§7). (The runtime watch-based hot-reload
+  // is covered end-to-end by the Playwright/compose suite; here we load the published
+  // rule at Cerbos startup for deterministic, fsnotify-independent effectiveness.)
+  const publishRes = await fetch(`${pap.url}/v1/policies`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...internalIdentityHeaders({ sub: 'dev', tid: TENANT_ACME }),
+    },
+    body: JSON.stringify({
+      scope: SCOPE_ACME_FINANCE,
+      rule: DEMO_EXPENSE_POLICY_RULE,
+      effectiveDate: new Date().toISOString(),
+    }),
+  });
+  if (!publishRes.ok) {
+    throw new Error(
+      `Demo policy publish failed: ${String(publishRes.status)} ${await publishRes.text()}`,
+    );
+  }
+
+  // (5d) NOW start Cerbos with policyDir (platform defaults + the just-published
+  // tenant rule) loaded at startup, so the rule is effective the moment it's healthy.
+  const cerbos = await startCerbos(policyDir);
+
+  // (5e) Boot the Expense PEP (unprivileged role), wired to the now-running REAL
+  // Cerbos + the in-process PAP (PIP) + Audit (sink).
   const restoreExpenseEnv = withEnv({
     NODE_ENV: 'production',
     PORT: '4000',
@@ -335,36 +368,8 @@ export async function startStack(): Promise<RunningStack> {
   const expense = await bootApp(ExpenseAppModule, ExpenseFilter);
   restoreExpenseEnv();
 
-  // (6) PUBLISH the demo policy through the PAP so Cerbos hot-reloads a REAL,
-  // runtime-defined rule (not pre-baked). The PAP now derives tenant/actor from the
-  // VERIFIED gateway-signed internal token (DESIGN §6/§7), so send the signed token
-  // for `dev`@Acme rather than plaintext x-tenant-id/x-actor-id headers.
-  const publishRes = await fetch(`${pap.url}/v1/policies`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      ...internalIdentityHeaders({ sub: 'dev', tid: TENANT_ACME }),
-    },
-    body: JSON.stringify({
-      scope: SCOPE_ACME_FINANCE,
-      rule: DEMO_EXPENSE_POLICY_RULE,
-      effectiveDate: new Date().toISOString(),
-    }),
-  });
-  if (!publishRes.ok) {
-    throw new Error(
-      `Demo policy publish failed: ${String(publishRes.status)} ${await publishRes.text()}`,
-    );
-  }
-
-  // Deliver the PAP-published files into the Cerbos container's watched dir so its
-  // file watcher fires (see syncPolicies for the macOS bind-mount inotify caveat).
-  await cerbos.syncPolicies();
-
-  // Cerbos hot-reloads the watched dir asynchronously (watchForChanges). Poll its
-  // REST check API with a synthetic finance_manager request until the published
-  // acme.finance policy is EFFECTIVE (ALLOW), so the flow tests never race the
-  // reload. This is the FR-8 "effective within the staleness bound" gate.
+  // Sanity gate: confirm the published acme.finance rule is effective (loaded at
+  // Cerbos startup, so ~immediate; the poll also rides Cerbos warm-up).
   await waitForPolicyEffective(`http://${cerbos.host}:${String(cerbos.httpPort)}`);
 
   // Long-lived superuser + app DataSources for the RLS-isolation probes.

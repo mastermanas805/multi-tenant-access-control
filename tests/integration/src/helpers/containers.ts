@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -84,19 +84,19 @@ export async function startPostgres(): Promise<StartedPostgres> {
  * DESIGN §3.4) — not pre-baked into the image. `watchForChanges` (in .cerbos.yaml)
  * makes the PDP hot-reload the published file within seconds.
  */
-export async function startCerbos(): Promise<StartedCerbos> {
-  // Host dir the PAP's FsCerbosPolicyPublisher writes compiled policies into at
-  // runtime (CERBOS_POLICY_DIR). It is BIND-MOUNTED into the container's watched
-  // /policies, so a runtime publish lands directly in Cerbos's watched dir and
-  // `watchForChanges` hot-reloads it — exactly the docker-compose topology the
-  // Playwright suite exercises. World-readable so the container's non-root cerbos
-  // user can read the host dir.
+/**
+ * Creates + seeds the host policy dir the PAP publishes into (CERBOS_POLICY_DIR),
+ * with ONLY the platform defaults (derived roles + base guardrail). The tenant
+ * `acme.finance` rule is deliberately ABSENT — it is published DYNAMICALLY through
+ * the PAP at runtime (FR-8, DESIGN §3.4), never pre-baked. World-readable so the
+ * container's non-root cerbos user can read the files once they're copied in.
+ *
+ * Returns the dir; call BEFORE booting the PAP (so the PAP can write into it), then
+ * pass it to {@link startCerbos} AFTER publishing.
+ */
+export function prepareCerbosPolicyDir(): string {
   const policyDir = mkdtempSync(join(tmpdir(), 'cerbos-int-policies-'));
   chmodSync(policyDir, 0o755);
-
-  // Seed ONLY the platform defaults (derived roles + base guardrail). The tenant
-  // `acme.finance` rule is deliberately ABSENT — it is published DYNAMICALLY through
-  // the PAP at runtime (FR-8, DESIGN §3.4), never pre-baked.
   writeFileSync(
     join(policyDir, '_platform_derived_roles.yaml'),
     readFileSync(join(CERBOS_DEPLOY, 'policies', '_platform_derived_roles.yaml'), 'utf8'),
@@ -107,12 +107,31 @@ export async function startCerbos(): Promise<StartedCerbos> {
     readFileSync(join(CERBOS_DEPLOY, 'policies', '_platform_base_expense_report.yaml'), 'utf8'),
     { mode: 0o644 },
   );
+  return policyDir;
+}
+
+/**
+ * Starts a real Cerbos PDP with EVERY policy in `policyDir` (platform defaults plus
+ * any rule the PAP has already published) COPIED IN AND LOADED AT STARTUP, so they
+ * are effective the moment Cerbos is healthy — with NO dependency on fsnotify
+ * hot-reload, which is unreliable for Testcontainers file delivery on Linux CI and
+ * across the macOS host->VM boundary. (The genuine watch-based hot-reload over a
+ * real bind-mount is covered end-to-end by the Playwright/compose suite.) Call
+ * AFTER the PAP has published the tenant rule into `policyDir`.
+ */
+export async function startCerbos(policyDir: string): Promise<StartedCerbos> {
   const cerbosConfig = readFileSync(join(CERBOS_DEPLOY, '.cerbos.yaml'), 'utf8');
+  const policyFiles = readdirSync(policyDir).filter((f) => f.endsWith('.yaml'));
 
   const container = await new GenericContainer(CERBOS_IMAGE)
     .withCommand(['server', '--config=/conf/.cerbos.yaml'])
-    .withCopyContentToContainer([{ content: cerbosConfig, target: '/conf/.cerbos.yaml' }])
-    .withBindMounts([{ source: policyDir, target: '/policies', mode: 'rw' }])
+    .withCopyContentToContainer([
+      { content: cerbosConfig, target: '/conf/.cerbos.yaml' },
+      ...policyFiles.map((f) => ({
+        content: readFileSync(join(policyDir, f), 'utf8'),
+        target: `/policies/${f}`,
+      })),
+    ])
     .withExposedPorts(3593, 3592)
     .withWaitStrategy(Wait.forHttp('/_cerbos/health', 3592).forStatusCode(200))
     .start();
@@ -123,14 +142,10 @@ export async function startCerbos(): Promise<StartedCerbos> {
     grpcPort: container.getMappedPort(3593),
     httpPort: container.getMappedPort(3592),
     policyDir,
-    // No-op: the PAP writes compiled policies straight into policyDir, which IS the
-    // bind-mounted /policies, so Cerbos's file watcher fires on the host write
-    // (Linux CI). Kept for interface compatibility. (On Docker Desktop for macOS the
-    // host->VM inotify boundary can delay this; CI/Linux — the source of truth — is
-    // unaffected, and the watch-based hot-reload is also covered by the Playwright
-    // suite over the real compose bind-mount.)
+    // No-op: every policy was loaded at Cerbos startup (see above), so there is
+    // nothing to sync. Kept for interface compatibility.
     syncPolicies: async (): Promise<void> => {
-      /* policies are delivered via the bind mount; nothing to copy in */
+      /* policies are loaded at startup; nothing to do */
     },
     stop: async (): Promise<void> => {
       await container.stop();
