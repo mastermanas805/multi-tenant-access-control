@@ -190,10 +190,7 @@ export class JwksTokenVerifier implements TokenVerifier {
         continue;
       }
       try {
-        keys.set(
-          jwk.kid,
-          createPublicKey({ key: jwk as unknown as JsonWebKey, format: 'jwk' }),
-        );
+        keys.set(jwk.kid, createPublicKey({ key: jwk as unknown as JsonWebKey, format: 'jwk' }));
       } catch {
         // Skip a malformed key rather than failing the whole set.
       }

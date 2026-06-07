@@ -50,8 +50,7 @@ import { TenantContextGuard } from './presentation/tenant-context.guard';
         // consumes. Empty secret -> DEV/TEST placeholder; set -> production verify.
         internalTokenSecret: config.values.INTERNAL_TOKEN_SECRET,
         internalTokenIssuer: config.values.INTERNAL_TOKEN_ISSUER,
-        internalTokenClockToleranceSeconds:
-          config.values.INTERNAL_TOKEN_CLOCK_TOLERANCE_SECONDS,
+        internalTokenClockToleranceSeconds: config.values.INTERNAL_TOKEN_CLOCK_TOLERANCE_SECONDS,
       }),
     },
     IdentityContextMiddleware,

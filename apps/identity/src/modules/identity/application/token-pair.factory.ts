@@ -2,18 +2,12 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { type Clock, CLOCK } from '@kernel/core';
 
-import {
-  type RefreshTokenStore,
-  REFRESH_TOKEN_STORE,
-} from '../domain/refresh-token-store.port';
+import { type RefreshTokenStore, REFRESH_TOKEN_STORE } from '../domain/refresh-token-store.port';
 import { type SecretGenerator, SECRET_GENERATOR } from '../domain/secret-generator.port';
 import { type TokenSigner, TOKEN_SIGNER } from '../domain/token-signer.port';
 import { type User } from '../domain/user.entity';
 import { type TokenView } from './dto/token.view';
-import {
-  type TokenIssuancePolicy,
-  TOKEN_ISSUANCE_POLICY,
-} from './token-issuance.policy';
+import { type TokenIssuancePolicy, TOKEN_ISSUANCE_POLICY } from './token-issuance.policy';
 
 /** Inputs that vary per grant when minting a token pair. */
 export interface TokenPairContext {

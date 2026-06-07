@@ -36,8 +36,7 @@ import { ConfigService } from '../config/config.service';
         // The signature-verification wiring the IdentityContextMiddleware consumes.
         internalTokenSecret: config.values.INTERNAL_TOKEN_SECRET,
         internalTokenIssuer: config.values.INTERNAL_TOKEN_ISSUER,
-        internalTokenClockToleranceSeconds:
-          config.values.INTERNAL_TOKEN_CLOCK_TOLERANCE_SECONDS,
+        internalTokenClockToleranceSeconds: config.values.INTERNAL_TOKEN_CLOCK_TOLERANCE_SECONDS,
       }),
     },
     IdentityContextMiddleware,

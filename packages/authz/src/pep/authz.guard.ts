@@ -126,10 +126,7 @@ export class AuthzGuard implements CanActivate {
   }
 
   /** DESIGN §6 layer 2: a resource in another tenant is denied before the PDP. */
-  private enforceTenantGuardrail(
-    principal: AuthzPrincipalContext,
-    resource: LoadedResource,
-  ): void {
+  private enforceTenantGuardrail(principal: AuthzPrincipalContext, resource: LoadedResource): void {
     if (resource.attr.tenantId !== principal.tenantId) {
       throw new ForbiddenError('Resource not in your tenant', 'tenant isolation guardrail');
     }

@@ -74,10 +74,7 @@ export function buildForwardedHeaders(
   identity: GatewayIdentity | null,
   injected: InjectedIdentityHeaders | null,
 ): Record<string, string> {
-  const dropped = new Set<string>([
-    ...HOP_BY_HOP_HEADERS,
-    ...CLIENT_SPOOFABLE_HEADERS,
-  ]);
+  const dropped = new Set<string>([...HOP_BY_HOP_HEADERS, ...CLIENT_SPOOFABLE_HEADERS]);
 
   const out: Record<string, string> = {};
   for (const [rawKey, rawValue] of Object.entries(clientHeaders)) {

@@ -33,10 +33,7 @@ import { SharedModule } from './shared/shared.module';
  */
 @Module({
   imports: [ConfigModule, SharedModule, HealthModule, RateLimitModule, AuthModule, ProxyModule],
-  providers: [
-    { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor },
-    GlobalExceptionFilter,
-  ],
+  providers: [{ provide: APP_INTERCEPTOR, useClass: LoggingInterceptor }, GlobalExceptionFilter],
 })
 export class AppModule implements NestModule {
   public configure(consumer: MiddlewareConsumer): void {

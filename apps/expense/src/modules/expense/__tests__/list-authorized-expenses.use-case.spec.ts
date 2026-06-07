@@ -1,8 +1,5 @@
 import { makeCursorPage } from '@kernel/core';
-import {
-  type EffectivePrincipal,
-  type PdpCheckResult,
-} from '@contracts/core';
+import { type EffectivePrincipal, type PdpCheckResult } from '@contracts/core';
 import { type AuditSink, type CerbosPdpClient, type PipClient } from '@authz/pep';
 
 import { ListAuthorizedExpensesUseCase } from '../application/use-cases/list-authorized-expenses.use-case';
@@ -47,10 +44,7 @@ describe('ListAuthorizedExpensesUseCase (mocked PDP+PIP)', () => {
     traceId: 'trc_list',
   };
 
-  function build(opts: {
-    items: Expense[];
-    decide: (resourceId: string) => 'ALLOW' | 'DENY';
-  }): {
+  function build(opts: { items: Expense[]; decide: (resourceId: string) => 'ALLOW' | 'DENY' }): {
     useCase: ListAuthorizedExpensesUseCase;
     auditRecord: jest.Mock;
     pipResolve: jest.Mock;
@@ -61,11 +55,7 @@ describe('ListAuthorizedExpensesUseCase (mocked PDP+PIP)', () => {
       list: jest.fn().mockResolvedValue(makeCursorPage(opts.items, null)),
     };
     const pdpCheck = jest.fn(
-      (
-        _p: unknown,
-        resource: { id: string },
-        actions: string[],
-      ): Promise<PdpCheckResult> =>
+      (_p: unknown, resource: { id: string }, actions: string[]): Promise<PdpCheckResult> =>
         Promise.resolve({
           decisionId: `dec_${resource.id}`,
           results: actions.map((action) => ({ action, effect: opts.decide(resource.id) })),

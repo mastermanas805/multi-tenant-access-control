@@ -74,7 +74,10 @@ export class RecordAuditEventUseCase {
     }
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) {
-      throw new InvalidAuditEventError('occurredAt must be an ISO-8601 timestamp', 'occurred_at_invalid');
+      throw new InvalidAuditEventError(
+        'occurredAt must be an ISO-8601 timestamp',
+        'occurred_at_invalid',
+      );
     }
     return parsed;
   }

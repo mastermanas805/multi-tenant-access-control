@@ -63,11 +63,7 @@ describe('CryptoTokenSigner', () => {
   });
 
   it('emits the platform-admin scope as the snake_case `platform_admin` claim (only when true)', () => {
-    const { token } = signer.signAccessToken(
-      { ...claims, platformAdmin: true },
-      1_000_000,
-      900,
-    );
+    const { token } = signer.signAccessToken({ ...claims, platformAdmin: true }, 1_000_000, 900);
     const [, payloadB64] = jwtParts(token);
     const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
     // The wire claim is snake_case; the camelCase domain key never leaks.

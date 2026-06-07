@@ -77,8 +77,7 @@ export class AuditEventController {
 
   @Get()
   @ApiOperation({
-    summary:
-      "List audit events (cursor pagination), scoped to the caller's verified tenant",
+    summary: "List audit events (cursor pagination), scoped to the caller's verified tenant",
   })
   @ApiOkResponse({ type: AuditEventPageResponse })
   public async list(

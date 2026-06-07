@@ -129,7 +129,9 @@ describe('IdentityContextMiddleware — production signature verification (DESIG
   it('REJECTS (401) a signature minted with the WRONG secret (forged token)', () => {
     const mw = verifying();
     const req = mockReq({
-      [IdentityContextMiddleware.SIGNATURE_HEADER]: signToken(CLAIMS, { secret: 'attacker-secret' }),
+      [IdentityContextMiddleware.SIGNATURE_HEADER]: signToken(CLAIMS, {
+        secret: 'attacker-secret',
+      }),
     });
 
     expect(() => run(mw, req)).toThrow(UnauthenticatedError);
@@ -168,7 +170,9 @@ describe('IdentityContextMiddleware — production signature verification (DESIG
     const mw = verifying({ internalTokenClockToleranceSeconds: 0 });
     const expiredSeconds = Math.floor(Date.now() / 1000) - 600;
     const req = mockReq({
-      [IdentityContextMiddleware.SIGNATURE_HEADER]: signToken(CLAIMS, { expSeconds: expiredSeconds }),
+      [IdentityContextMiddleware.SIGNATURE_HEADER]: signToken(CLAIMS, {
+        expSeconds: expiredSeconds,
+      }),
     });
 
     expect(() => run(mw, req)).toThrow(UnauthenticatedError);

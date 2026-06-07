@@ -41,9 +41,7 @@ async function bootstrap(): Promise<void> {
   // OpenAPI at /docs.
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Audit Service')
-    .setDescription(
-      'Append-only, tamper-evident decision/admin audit log. DESIGN §10 / App. C.',
-    )
+    .setDescription('Append-only, tamper-evident decision/admin audit log. DESIGN §10 / App. C.')
     .setVersion('1.0.0')
     .addBearerAuth()
     .build();
@@ -54,9 +52,7 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
 
   await app.listen(config.values.PORT);
-  new Logger('Bootstrap').log(
-    `audit listening on :${String(config.values.PORT)} (docs at /docs)`,
-  );
+  new Logger('Bootstrap').log(`audit listening on :${String(config.values.PORT)} (docs at /docs)`);
 }
 
 void bootstrap();

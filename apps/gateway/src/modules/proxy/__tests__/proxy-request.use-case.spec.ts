@@ -8,10 +8,7 @@ import {
 } from '../../auth/domain/internal-token-minter.port';
 import { ConfigService } from '../../../config/config.service';
 import { ProxyRequestUseCase } from '../application/use-cases/proxy-request.use-case';
-import {
-  INTERNAL_IDENTITY_HEADER,
-  TENANT_CONTEXT_HEADER,
-} from '../domain/forwarded-headers';
+import { INTERNAL_IDENTITY_HEADER, TENANT_CONTEXT_HEADER } from '../domain/forwarded-headers';
 import {
   type UpstreamHttpClient,
   type UpstreamRequest,

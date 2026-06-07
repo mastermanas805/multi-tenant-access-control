@@ -1,12 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsIn,
-  IsISO8601,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Length,
-} from 'class-validator';
+import { IsIn, IsISO8601, IsOptional, IsString, IsUUID, Length } from 'class-validator';
 
 import { AuditDecision } from '../../domain/value-objects/audit-decision.vo';
 
@@ -27,11 +20,17 @@ export class RecordAuditEventRequest {
   @IsUUID()
   public id?: string;
 
-  @ApiProperty({ format: 'uuid', description: 'Tenant the event belongs to (audit is tenant-scoped).' })
+  @ApiProperty({
+    format: 'uuid',
+    description: 'Tenant the event belongs to (audit is tenant-scoped).',
+  })
   @IsUUID()
   public tenantId!: string;
 
-  @ApiProperty({ example: 'riya', description: 'The acting principal/actor id (the JWT sub/actorId).' })
+  @ApiProperty({
+    example: 'riya',
+    description: 'The acting principal/actor id (the JWT sub/actorId).',
+  })
   @IsString()
   @Length(1, 255)
   public actor!: string;

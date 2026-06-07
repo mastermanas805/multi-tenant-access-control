@@ -1,8 +1,4 @@
-import {
-  createSign,
-  generateKeyPairSync,
-  type KeyObject,
-} from 'node:crypto';
+import { createSign, generateKeyPairSync, type KeyObject } from 'node:crypto';
 
 import { type Clock, UnauthenticatedError } from '@kernel/core';
 
@@ -47,7 +43,10 @@ function signJwt(
   header: Record<string, unknown> = { alg: 'RS256', typ: 'JWT', kid: KID },
 ): string {
   const signingInput = `${base64Url(JSON.stringify(header))}.${base64Url(JSON.stringify(claims))}`;
-  const signature = createSign('RSA-SHA256').update(signingInput).sign(privateKey).toString('base64url');
+  const signature = createSign('RSA-SHA256')
+    .update(signingInput)
+    .sign(privateKey)
+    .toString('base64url');
   return `${signingInput}.${signature}`;
 }
 
@@ -125,12 +124,16 @@ describe('JwksTokenVerifier (DESIGN §4.3/§5/§7)', () => {
     const { verifier, privateKey } = setup();
     await expect(
       verifier.verify(
-        BearerToken.fromAuthorizationHeader(`Bearer ${signJwt(privateKey, { ...validClaims, iss: 'evil' })}`),
+        BearerToken.fromAuthorizationHeader(
+          `Bearer ${signJwt(privateKey, { ...validClaims, iss: 'evil' })}`,
+        ),
       ),
     ).rejects.toBeInstanceOf(UnauthenticatedError);
     await expect(
       verifier.verify(
-        BearerToken.fromAuthorizationHeader(`Bearer ${signJwt(privateKey, { ...validClaims, aud: 'other' })}`),
+        BearerToken.fromAuthorizationHeader(
+          `Bearer ${signJwt(privateKey, { ...validClaims, aud: 'other' })}`,
+        ),
       ),
     ).rejects.toBeInstanceOf(UnauthenticatedError);
   });

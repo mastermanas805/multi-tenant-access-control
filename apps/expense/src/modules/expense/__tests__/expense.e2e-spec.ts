@@ -1,9 +1,4 @@
-import {
-  type INestApplication,
-  Injectable,
-  ValidationPipe,
-  VersioningType,
-} from '@nestjs/common';
+import { type INestApplication, Injectable, ValidationPipe, VersioningType } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 
@@ -69,7 +64,12 @@ class FakePdp {
 
     const results = actions.map((action) => {
       if (!sameTenant) {
-        return { action, effect: 'DENY' as const, policy: 'expense_report', reason: 'cross-tenant' };
+        return {
+          action,
+          effect: 'DENY' as const,
+          policy: 'expense_report',
+          reason: 'cross-tenant',
+        };
       }
       const allowed = isFinanceManager && sameDept && amount < 10000;
       const effect: 'ALLOW' | 'DENY' = allowed ? 'ALLOW' : 'DENY';

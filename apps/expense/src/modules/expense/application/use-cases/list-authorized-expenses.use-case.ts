@@ -98,7 +98,15 @@ export class ListAuthorizedExpensesUseCase {
     const result = decision.results[0];
     const effect = result?.effect ?? 'DENY';
 
-    this.emitAudit(query, decision.decisionId, resource, 'read', effect, result?.policy, result?.reason);
+    this.emitAudit(
+      query,
+      decision.decisionId,
+      resource,
+      'read',
+      effect,
+      result?.policy,
+      result?.reason,
+    );
     return effect === 'ALLOW';
   }
 

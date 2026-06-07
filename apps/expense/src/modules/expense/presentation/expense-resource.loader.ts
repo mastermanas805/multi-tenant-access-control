@@ -2,10 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { type LoadedResource, type ResourceLoaderContext } from '@authz/pep';
 
-import {
-  type ExpenseRepository,
-  EXPENSE_REPOSITORY,
-} from '../domain/expense.repository.port';
+import { type ExpenseRepository, EXPENSE_REPOSITORY } from '../domain/expense.repository.port';
 import { ExpenseId } from '../domain/value-objects/expense-id.vo';
 
 /**

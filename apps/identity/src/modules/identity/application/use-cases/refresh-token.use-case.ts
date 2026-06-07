@@ -3,10 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { type Clock, CLOCK } from '@kernel/core';
 
 import { InvalidRefreshTokenError } from '../../domain/identity.errors';
-import {
-  type RefreshTokenStore,
-  REFRESH_TOKEN_STORE,
-} from '../../domain/refresh-token-store.port';
+import { type RefreshTokenStore, REFRESH_TOKEN_STORE } from '../../domain/refresh-token-store.port';
 import { type UserRepository, USER_REPOSITORY } from '../../domain/user.repository.port';
 import { UserId } from '../../domain/value-objects/user-id.vo';
 import { type RefreshTokenCommand } from '../dto/auth.commands';

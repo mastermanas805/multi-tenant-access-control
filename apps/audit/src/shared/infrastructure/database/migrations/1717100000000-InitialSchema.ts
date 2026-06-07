@@ -69,9 +69,7 @@ export class InitialSchema1717100000000 implements MigrationInterface {
       'CREATE INDEX "ix_audit_events_tenant_seq" ON "audit_events" ("tenant_id", "seq" DESC)',
     );
     // Cross-service correlation by trace id.
-    await queryRunner.query(
-      'CREATE INDEX "ix_audit_events_trace" ON "audit_events" ("trace_id")',
-    );
+    await queryRunner.query('CREATE INDEX "ix_audit_events_trace" ON "audit_events" ("trace_id")');
 
     // --- Append-only enforcement at the database ---------------------------
     // Even the owning role cannot UPDATE or DELETE a recorded event, so the log

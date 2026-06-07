@@ -5,7 +5,10 @@ import { TokenPairFactory } from '../application/token-pair.factory';
 import { IssueTokenUseCase } from '../application/use-cases/issue-token.use-case';
 import { InvalidCredentialsError } from '../domain/identity.errors';
 import { type PasswordHasher } from '../domain/password-hasher.port';
-import { type RefreshTokenRecord, type RefreshTokenStore } from '../domain/refresh-token-store.port';
+import {
+  type RefreshTokenRecord,
+  type RefreshTokenStore,
+} from '../domain/refresh-token-store.port';
 import { type SecretGenerator } from '../domain/secret-generator.port';
 import {
   type AccessTokenClaims,

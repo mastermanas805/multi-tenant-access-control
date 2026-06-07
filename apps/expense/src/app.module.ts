@@ -53,8 +53,7 @@ import { SharedModule } from './shared/shared.module';
         // placeholder decode (a boot guard refuses to start in production unset).
         internalTokenSecret: config.values.INTERNAL_TOKEN_SECRET,
         internalTokenIssuer: config.values.INTERNAL_TOKEN_ISSUER,
-        internalTokenClockToleranceSeconds:
-          config.values.INTERNAL_TOKEN_CLOCK_TOLERANCE_SECONDS,
+        internalTokenClockToleranceSeconds: config.values.INTERNAL_TOKEN_CLOCK_TOLERANCE_SECONDS,
       }),
     }),
     ExpenseModule,

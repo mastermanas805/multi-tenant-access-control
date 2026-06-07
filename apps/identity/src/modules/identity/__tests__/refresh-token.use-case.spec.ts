@@ -4,7 +4,10 @@ import { type TokenIssuancePolicy } from '../application/token-issuance.policy';
 import { TokenPairFactory } from '../application/token-pair.factory';
 import { RefreshTokenUseCase } from '../application/use-cases/refresh-token.use-case';
 import { InvalidRefreshTokenError } from '../domain/identity.errors';
-import { type RefreshTokenRecord, type RefreshTokenStore } from '../domain/refresh-token-store.port';
+import {
+  type RefreshTokenRecord,
+  type RefreshTokenStore,
+} from '../domain/refresh-token-store.port';
 import { type SecretGenerator } from '../domain/secret-generator.port';
 import {
   type AccessTokenClaims,

@@ -30,7 +30,11 @@ import {
 export class AuthzModule {
   /** Synchronous wiring from a literal options object. */
   public static forRoot(options: AuthzModuleOptions, registerGlobalGuard = false): DynamicModule {
-    return AuthzModule.build({ provide: AUTHZ_OPTIONS, useValue: options }, [], registerGlobalGuard);
+    return AuthzModule.build(
+      { provide: AUTHZ_OPTIONS, useValue: options },
+      [],
+      registerGlobalGuard,
+    );
   }
 
   /** Async wiring so options come from the service's ConfigService (DESIGN §4.4). */

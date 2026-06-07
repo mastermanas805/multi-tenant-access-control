@@ -98,9 +98,7 @@ export class InitialSchema1717100000000 implements MigrationInterface {
   public async down(queryRunner: QueryRunner): Promise<void> {
     const isPostgres = queryRunner.connection.options.type === 'postgres';
     if (isPostgres) {
-      await queryRunner.query(
-        'DROP POLICY IF EXISTS "expenses_tenant_isolation" ON "expenses"',
-      );
+      await queryRunner.query('DROP POLICY IF EXISTS "expenses_tenant_isolation" ON "expenses"');
     }
     await queryRunner.query('DROP TABLE IF EXISTS "expenses"');
   }

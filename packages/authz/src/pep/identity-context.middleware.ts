@@ -148,7 +148,10 @@ export class IdentityContextMiddleware implements NestMiddleware {
     try {
       parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
     } catch {
-      throw new UnauthenticatedError('Malformed internal identity token', 'malformed_internal_identity');
+      throw new UnauthenticatedError(
+        'Malformed internal identity token',
+        'malformed_internal_identity',
+      );
     }
     if (!this.isValidToken(parsed)) {
       throw new UnauthenticatedError(

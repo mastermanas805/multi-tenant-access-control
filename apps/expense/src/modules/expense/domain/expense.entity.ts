@@ -81,9 +81,17 @@ export class Expense extends AggregateRoot<ExpenseProps> {
     Guard.againstEmpty(props.department, 'department');
     Guard.againstEmpty(props.ownerId, 'ownerId');
     Guard.againstEmpty(props.scope, 'scope');
-    Guard.invariant(Number.isFinite(props.amount), 'amount must be a finite number', 'amount_invalid');
+    Guard.invariant(
+      Number.isFinite(props.amount),
+      'amount must be a finite number',
+      'amount_invalid',
+    );
     Guard.invariant(props.amount >= 0, 'amount must be non-negative', 'amount_negative');
-    Guard.invariant(props.description.length <= 1000, 'description too long', 'description_too_long');
+    Guard.invariant(
+      props.description.length <= 1000,
+      'description too long',
+      'description_too_long',
+    );
 
     return new Expense(
       {

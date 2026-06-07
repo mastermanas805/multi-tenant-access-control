@@ -23,9 +23,7 @@ describe('VerifyChainUseCase (tamper detection)', () => {
   const clock: Clock = { now: () => new Date('2026-06-06T10:00:00.000Z') };
   const tenantId = 'aaaaaaaa-0000-4000-8000-000000000001';
 
-  async function seedThree(
-    repo: InMemoryAuditEventRepository,
-  ): Promise<void> {
+  async function seedThree(repo: InMemoryAuditEventRepository): Promise<void> {
     const record = new RecordAuditEventUseCase(repo, clock);
     await record.execute({
       tenantId,

@@ -133,10 +133,13 @@ export function listAssignments(userId: string): Promise<ApiResult<RoleAssignmen
 
 /** Revoke a single role assignment (drives the FR-8 dynamic-change demo). */
 export function revokeAssignment(assignmentId: string): Promise<ApiResult<RoleAssignment>> {
-  return request<RoleAssignment>(`/v1/role-assignments/${encodeURIComponent(assignmentId)}/revoke`, {
-    method: 'POST',
-    body: JSON.stringify({}),
-  });
+  return request<RoleAssignment>(
+    `/v1/role-assignments/${encodeURIComponent(assignmentId)}/revoke`,
+    {
+      method: 'POST',
+      body: JSON.stringify({}),
+    },
+  );
 }
 
 /** Grant finance_manager (at acme.finance) to a user — re-adds a revoked grant. */

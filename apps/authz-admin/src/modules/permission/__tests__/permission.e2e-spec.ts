@@ -140,10 +140,7 @@ describe('Permission module (e2e)', () => {
   });
 
   it('lists permissions for the catalog', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/v1/permissions')
-      .set(idHeader)
-      .expect(200);
+    const res = await request(app.getHttpServer()).get('/v1/permissions').set(idHeader).expect(200);
 
     expect(Array.isArray(res.body.items)).toBe(true);
     expect(res.body.items.length).toBeGreaterThan(0);

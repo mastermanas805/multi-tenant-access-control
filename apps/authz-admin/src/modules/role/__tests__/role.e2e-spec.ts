@@ -100,10 +100,7 @@ describe('Role module (e2e)', () => {
     expect(create.body.version).toBe(1);
 
     const id = create.body.id as string;
-    const get = await request(app.getHttpServer())
-      .get(`/v1/roles/${id}`)
-      .set(idHeader)
-      .expect(200);
+    const get = await request(app.getHttpServer()).get(`/v1/roles/${id}`).set(idHeader).expect(200);
     expect(get.body.scope).toBe('acme.finance');
   });
 

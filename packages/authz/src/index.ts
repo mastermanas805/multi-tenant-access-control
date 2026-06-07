@@ -21,10 +21,7 @@ export {
   type ResourceLoaderContext,
 } from './pep/authorize.decorator';
 export { IdentityContextMiddleware } from './pep/identity-context.middleware';
-export {
-  type AuthzPrincipalContext,
-  principalContextFromToken,
-} from './pep/authz-request-context';
+export { type AuthzPrincipalContext, principalContextFromToken } from './pep/authz-request-context';
 export { type AuthzDecisionContext } from './pep/express-augmentation';
 
 // PDP client (Cerbos)

@@ -66,7 +66,9 @@ export class Permission extends AggregateRoot<PermissionProps> {
     );
     // The catalog-registration event is intrinsic to creation (mirrors
     // Policy.publish), so callers can't forget to raise it (DESIGN §3.4 seam).
-    permission.addDomainEvent(new PermissionCreatedEvent(permission.id, permission.props.key.toString()));
+    permission.addDomainEvent(
+      new PermissionCreatedEvent(permission.id, permission.props.key.toString()),
+    );
     return permission;
   }
 

@@ -145,10 +145,7 @@ describe('Audit module (e2e)', () => {
       .send(event({ tenantId: tenantB, resourceId: 'gx_scoped' }))
       .expect(201);
 
-    const res = await request(app.getHttpServer())
-      .get('/v1/audit/events')
-      .set(callerA)
-      .expect(200);
+    const res = await request(app.getHttpServer()).get('/v1/audit/events').set(callerA).expect(200);
 
     expect(res.body.items.length).toBeGreaterThanOrEqual(1);
     for (const item of res.body.items) {

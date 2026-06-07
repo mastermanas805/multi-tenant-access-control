@@ -96,9 +96,9 @@ describe('RecordAuditEventUseCase', () => {
     const repo = new InMemoryAuditEventRepository();
     const useCase = new RecordAuditEventUseCase(repo, clock);
 
-    await expect(
-      useCase.execute(makeCommand({ occurredAt: 'not-a-date' })),
-    ).rejects.toBeInstanceOf(InvalidAuditEventError);
+    await expect(useCase.execute(makeCommand({ occurredAt: 'not-a-date' }))).rejects.toBeInstanceOf(
+      InvalidAuditEventError,
+    );
   });
 
   it('rejects a duplicate id (idempotency — one chain row per event)', async () => {

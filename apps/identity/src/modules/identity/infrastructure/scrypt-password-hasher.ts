@@ -38,9 +38,7 @@ export class ScryptPasswordHasher implements PasswordHasher {
   public async hash(plaintext: string): Promise<PasswordHash> {
     const salt = randomBytes(SALT_BYTES);
     const derived = (await scryptAsync(plaintext, salt, KEY_LENGTH)) as Buffer;
-    return PasswordHash.fromEncoded(
-      `${PREFIX}$${salt.toString('hex')}$${derived.toString('hex')}`,
-    );
+    return PasswordHash.fromEncoded(`${PREFIX}$${salt.toString('hex')}$${derived.toString('hex')}`);
   }
 
   public async verify(plaintext: string, hash: PasswordHash): Promise<boolean> {

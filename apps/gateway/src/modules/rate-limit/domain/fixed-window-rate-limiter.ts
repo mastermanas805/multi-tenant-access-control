@@ -56,9 +56,7 @@ export class FixedWindowRateLimiter {
     const existing = this.windows.get(key);
     const isNewWindow = existing === undefined || nowMs - existing.windowStart >= this.windowMs;
 
-    const state: WindowState = isNewWindow
-      ? { count: 0, windowStart: nowMs }
-      : existing;
+    const state: WindowState = isNewWindow ? { count: 0, windowStart: nowMs } : existing;
 
     const resetAt = state.windowStart + this.windowMs;
 

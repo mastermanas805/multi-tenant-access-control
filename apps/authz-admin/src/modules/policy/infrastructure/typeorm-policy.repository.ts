@@ -1,7 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
 
-import { ConflictError, type CursorPage, Cursor, type PageQuery, makeCursorPage } from '@kernel/core';
+import {
+  ConflictError,
+  type CursorPage,
+  Cursor,
+  type PageQuery,
+  makeCursorPage,
+} from '@kernel/core';
 
 import { DATA_SOURCE } from '../../../shared/infrastructure/database/data-source';
 import { TenantContextService } from '../../../shared/infrastructure/database/tenant-context';

@@ -1,9 +1,4 @@
-import {
-  type MiddlewareConsumer,
-  Module,
-  type NestModule,
-  RequestMethod,
-} from '@nestjs/common';
+import { type MiddlewareConsumer, Module, type NestModule, RequestMethod } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 
 import { IdentityContextMiddleware } from '@authz/pep';
@@ -43,10 +38,7 @@ import { SharedModule } from './shared/shared.module';
  */
 @Module({
   imports: [ConfigModule, DatabaseModule, SharedModule, HealthModule, AuditEventModule],
-  providers: [
-    { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor },
-    GlobalExceptionFilter,
-  ],
+  providers: [{ provide: APP_INTERCEPTOR, useClass: LoggingInterceptor }, GlobalExceptionFilter],
 })
 export class AppModule implements NestModule {
   public configure(consumer: MiddlewareConsumer): void {
