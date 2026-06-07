@@ -1,50 +1,22 @@
 {
   "info": {
-    "name": "Authz Platform — Multi-Tenant Access Control",
-    "description": "End-to-end recipes for the multi-tenant authorization platform. Select the 'Authz Platform (local)' environment, run '0. Auth' once (tokens are captured automatically), then run any folder. Mirrors API_PLAYBOOK.md.",
+    "name": "Authz Platform — One Story, End to End",
+    "description": "Runs the whole multi-tenant access-control story in order: onboard a client -> provision its access model THROUGH THE API -> sign in -> a happy-path decision -> escalating denials -> a second isolated client -> flip a role live (FR-8) -> version a policy. Every role and policy is created at runtime via the API and stored in the DB — nothing is hardcoded. Select the 'Authz Platform (local)' environment and click Run. Mirrors API_PLAYBOOK.md 1:1.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
-      "name": "0. Auth",
+      "name": "1 · Authenticate",
       "item": [
         {
-          "name": "Login as Riya (finance_manager)",
+          "name": "Login as Dev (Acme platform-admin)",
           "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const j = pm.response.json();",
-                  "pm.environment.set('riyaToken', j.accessToken);",
-                  "pm.environment.set('riyaSub', j.sub);",
-                  "pm.test('200 + token', () => { pm.response.to.have.status(200); pm.expect(j.accessToken).to.be.a('string'); });"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "content-type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"email\": \"riya@acme.com\",\n  \"password\": \"{{password}}\"\n}" },
-            "url": { "raw": "{{idp}}/v1/auth/token", "host": ["{{idp}}"], "path": ["v1", "auth", "token"] }
-          }
-        },
-        {
-          "name": "Login as Dev (platform-admin)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const j = pm.response.json();",
-                  "pm.environment.set('devToken', j.accessToken);",
-                  "pm.test('200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "const j = pm.response.json();",
+              "pm.environment.set('devToken', j.accessToken);",
+              "pm.test('200 + token', () => { pm.response.to.have.status(200); pm.expect(j.accessToken).to.be.a('string'); });",
+              "pm.test('token carries identity+tenant only (no permissions claim)', () => { const p = JSON.parse(atob(j.accessToken.split('.')[1])); pm.expect(p).to.not.have.property('permissions'); pm.expect(p).to.not.have.property('roles'); });"
+            ] } }
           ],
           "request": {
             "method": "POST",
@@ -54,24 +26,68 @@
           }
         },
         {
-          "name": "Login as Sam (engineer)",
+          "name": "Login as Riya (Acme finance_manager)",
           "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const j = pm.response.json();",
-                  "pm.environment.set('samToken', j.accessToken);",
-                  "pm.test('200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "const j = pm.response.json();",
+              "pm.environment.set('riyaToken', j.accessToken);",
+              "pm.environment.set('riyaSub', j.sub);",
+              "pm.test('200 + token', () => { pm.response.to.have.status(200); pm.expect(j.accessToken).to.be.a('string'); });"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"riya@acme.com\",\n  \"password\": \"{{password}}\"\n}" },
+            "url": { "raw": "{{idp}}/v1/auth/token", "host": ["{{idp}}"], "path": ["v1", "auth", "token"] }
+          }
+        },
+        {
+          "name": "Login as Sam (Acme engineer)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "const j = pm.response.json();",
+              "pm.environment.set('samToken', j.accessToken);",
+              "pm.environment.set('samSub', j.sub);",
+              "pm.test('200', () => pm.response.to.have.status(200));"
+            ] } }
           ],
           "request": {
             "method": "POST",
             "header": [{ "key": "content-type", "value": "application/json" }],
             "body": { "mode": "raw", "raw": "{\n  \"email\": \"sam@acme.com\",\n  \"password\": \"{{password}}\"\n}" },
+            "url": { "raw": "{{idp}}/v1/auth/token", "host": ["{{idp}}"], "path": ["v1", "auth", "token"] }
+          }
+        },
+        {
+          "name": "Login as Gus (Globex platform-admin)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "const j = pm.response.json();",
+              "pm.environment.set('gusToken', j.accessToken);",
+              "pm.test('200', () => pm.response.to.have.status(200));"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"gus@globex.com\",\n  \"password\": \"{{password}}\"\n}" },
+            "url": { "raw": "{{idp}}/v1/auth/token", "host": ["{{idp}}"], "path": ["v1", "auth", "token"] }
+          }
+        },
+        {
+          "name": "Login as Gwen (Globex ops_manager)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "const j = pm.response.json();",
+              "pm.environment.set('gwenToken', j.accessToken);",
+              "pm.test('200', () => pm.response.to.have.status(200));"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"gwen@globex.com\",\n  \"password\": \"{{password}}\"\n}" },
             "url": { "raw": "{{idp}}/v1/auth/token", "host": ["{{idp}}"], "path": ["v1", "auth", "token"] }
           }
         },
@@ -90,10 +106,109 @@
       ]
     },
     {
-      "name": "1. Authorization decisions",
+      "name": "2 · Onboard a client (tenant)",
       "item": [
         {
-          "name": "List expenses (Riya, tenant-scoped)",
+          "name": "Dev onboards 'Initech' → 201",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.test('201 or 409 (slug already onboarded)', () => pm.expect([201,409]).to.include(pm.response.code));"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "authorization", "value": "Bearer {{devToken}}" }, { "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Initech\",\n  \"slug\": \"initech-001\",\n  \"isolationTier\": \"pool\"\n}" },
+            "url": { "raw": "{{gw}}/v1/tenants", "host": ["{{gw}}"], "path": ["v1", "tenants"] }
+          }
+        },
+        {
+          "name": "Riya (non-admin) onboards a tenant → 403",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('403 (platform-admin only)', () => pm.response.to.have.status(403));"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "authorization", "value": "Bearer {{riyaToken}}" }, { "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"X Co\",\n  \"slug\": \"x-co\"\n}" },
+            "url": { "raw": "{{gw}}/v1/tenants", "host": ["{{gw}}"], "path": ["v1", "tenants"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 · Provision a model (via the API, not hardcoded)",
+      "item": [
+        {
+          "name": "Catalog a permission (expense:report:export)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('201 or 409 (exists)', () => pm.expect([201,409]).to.include(pm.response.code));"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "authorization", "value": "Bearer {{devToken}}" }, { "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"key\": \"expense:report:export\",\n  \"description\": \"Export expense reports\"\n}" },
+            "url": { "raw": "{{gw}}/v1/permissions", "host": ["{{gw}}"], "path": ["v1", "permissions"] }
+          }
+        },
+        {
+          "name": "Define a role (finance_auditor @ acme.finance)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('201 or 409 (exists)', () => pm.expect([201,409]).to.include(pm.response.code));"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "authorization", "value": "Bearer {{devToken}}" }, { "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"key\": \"finance_auditor\",\n  \"scope\": \"acme.finance\",\n  \"permissions\": [\"expense:report:read\", \"expense:report:export\"]\n}" },
+            "url": { "raw": "{{gw}}/v1/roles", "host": ["{{gw}}"], "path": ["v1", "roles"] }
+          }
+        },
+        {
+          "name": "Capture finance_auditor role id",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "const arr = (pm.response.json().items || pm.response.json());",
+              "const r = arr.find(x => x.key === 'finance_auditor');",
+              "if (r) pm.environment.set('auditorRoleId', r.id);",
+              "pm.test('captured finance_auditor id', () => pm.expect(r, 'role').to.be.an('object'));"
+            ] } }
+          ],
+          "request": { "method": "GET", "header": [{ "key": "authorization", "value": "Bearer {{devToken}}" }], "url": { "raw": "{{gw}}/v1/roles", "host": ["{{gw}}"], "path": ["v1", "roles"] } }
+        },
+        {
+          "name": "Grant finance_auditor to Sam",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('201 or 409 (already granted)', () => pm.expect([201,409]).to.include(pm.response.code));"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "authorization", "value": "Bearer {{devToken}}" }, { "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{samSub}}\",\n  \"roleId\": \"{{auditorRoleId}}\",\n  \"scope\": \"acme.finance\"\n}" },
+            "url": { "raw": "{{gw}}/v1/role-assignments", "host": ["{{gw}}"], "path": ["v1", "role-assignments"] }
+          }
+        },
+        {
+          "name": "Publish the rule that drives the decision (acme.finance)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('201', () => pm.response.to.have.status(201));"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "authorization", "value": "Bearer {{devToken}}" }, { "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"scope\": \"acme.finance\",\n  \"effectiveDate\": \"2026-07-01T00:00:00Z\",\n  \"rule\": {\n    \"resource\": \"expense_report\",\n    \"rules\": [\n      {\n        \"name\": \"fm_approve\",\n        \"roles\": [\"finance_manager\"],\n        \"effect\": \"ALLOW\",\n        \"actions\": [\"read\", \"approve\"],\n        \"condition\": { \"all\": [\n          { \"expr\": \"request.resource.attr.amount < 10000\" },\n          { \"expr\": \"request.resource.attr.department == request.principal.attr.department\" }\n        ] }\n      }\n    ]\n  }\n}" },
+            "url": { "raw": "{{gw}}/v1/policies", "host": ["{{gw}}"], "path": ["v1", "policies"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 · Happy path (a real ALLOW)",
+      "item": [
+        {
+          "name": "Riya lists expenses (authorization-aware, tenant-scoped)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200', () => pm.response.to.have.status(200));"] } }
+          ],
           "request": {
             "method": "GET",
             "header": [{ "key": "authorization", "value": "Bearer {{riyaToken}}" }],
@@ -101,7 +216,7 @@
           }
         },
         {
-          "name": "ALLOW — approve $8,500 same-dept (exp_42) → 200",
+          "name": "ALLOW — Riya approves $8,500 same-dept (exp_42) → 200",
           "event": [
             { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 or 409 (already approved)', () => pm.expect([200,409]).to.include(pm.response.code));"] } }
           ],
@@ -111,11 +226,19 @@
             "body": { "mode": "raw", "raw": "{}" },
             "url": { "raw": "{{gw}}/v1/expenses/exp_42/approve", "host": ["{{gw}}"], "path": ["v1", "expenses", "exp_42", "approve"] }
           }
-        },
+        }
+      ]
+    },
+    {
+      "name": "5 · The tweaks (escalating denials)",
+      "item": [
         {
-          "name": "DENY (ABAC amount<10000) — approve $25,000 (exp_99) → 403",
+          "name": "DENY (ABAC amount<10000) — Riya approves $25,000 (exp_99) → 403",
           "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('403', () => pm.response.to.have.status(403));", "pm.test('has reason + decisionId', () => { const e = pm.response.json().error; pm.expect(e.reason).to.be.a('string'); pm.expect(e.decisionId).to.be.a('string'); });"] } }
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.test('403', () => pm.response.to.have.status(403));",
+              "pm.test('has reason + decisionId', () => { const e = pm.response.json().error; pm.expect(e.reason).to.be.a('string'); pm.expect(e.decisionId).to.be.a('string'); });"
+            ] } }
           ],
           "request": {
             "method": "POST",
@@ -137,7 +260,7 @@
           }
         },
         {
-          "name": "Tenant isolation — Riya approves a Globex expense (exp_glx) → 404",
+          "name": "DENY (tenant isolation) — Riya approves a Globex expense (exp_glx) → 404",
           "event": [
             { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('404 (RLS hides cross-tenant rows)', () => pm.response.to.have.status(404));"] } }
           ],
@@ -151,85 +274,77 @@
       ]
     },
     {
-      "name": "2. IAM — read the model (PAP)",
+      "name": "6 · A second client (Globex), fully isolated",
       "item": [
         {
-          "name": "List roles",
-          "request": { "method": "GET", "header": [{ "key": "authorization", "value": "Bearer {{devToken}}" }], "url": { "raw": "{{gw}}/v1/roles", "host": ["{{gw}}"], "path": ["v1", "roles"] } }
+          "name": "ALLOW — Gwen approves $3,200 ops (exp_gx1) under GLOBEX's own policy → 200",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 or 409 (already approved)', () => pm.expect([200,409]).to.include(pm.response.code));"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "authorization", "value": "Bearer {{gwenToken}}" }, { "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": { "raw": "{{gw}}/v1/expenses/exp_gx1/approve", "host": ["{{gw}}"], "path": ["v1", "expenses", "exp_gx1", "approve"] }
+          }
         },
         {
-          "name": "List permissions (global catalog)",
-          "request": { "method": "GET", "header": [{ "key": "authorization", "value": "Bearer {{devToken}}" }], "url": { "raw": "{{gw}}/v1/permissions", "host": ["{{gw}}"], "path": ["v1", "permissions"] } }
+          "name": "DENY (Globex amount cap) — Gwen approves $42,000 (exp_gx2) → 403",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('403', () => pm.response.to.have.status(403));"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "authorization", "value": "Bearer {{gwenToken}}" }, { "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": { "raw": "{{gw}}/v1/expenses/exp_gx2/approve", "host": ["{{gw}}"], "path": ["v1", "expenses", "exp_gx2", "approve"] }
+          }
         },
         {
-          "name": "List org units",
-          "request": { "method": "GET", "header": [{ "key": "authorization", "value": "Bearer {{devToken}}" }], "url": { "raw": "{{gw}}/v1/org-units", "host": ["{{gw}}"], "path": ["v1", "org-units"] } }
+          "name": "DENY (isolation, reverse) — Gwen approves an Acme expense (exp_42) → 404",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('404', () => pm.response.to.have.status(404));"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "authorization", "value": "Bearer {{gwenToken}}" }, { "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": { "raw": "{{gw}}/v1/expenses/exp_42/approve", "host": ["{{gw}}"], "path": ["v1", "expenses", "exp_42", "approve"] }
+          }
         },
         {
-          "name": "List Riya's role assignments",
-          "request": { "method": "GET", "header": [{ "key": "authorization", "value": "Bearer {{devToken}}" }], "url": { "raw": "{{gw}}/v1/role-assignments?userId={{riyaSub}}", "host": ["{{gw}}"], "path": ["v1", "role-assignments"], "query": [{ "key": "userId", "value": "{{riyaSub}}" }] } }
+          "name": "Admin isolation — Gus (Globex) sees ONLY Globex roles",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const keys = ((pm.response.json().items) || pm.response.json()).map(r => r.key);",
+              "pm.test('only Globex roles (ops_manager), never Acme roles', () => { pm.expect(keys).to.include('ops_manager'); pm.expect(keys).to.not.include('finance_manager'); });"
+            ] } }
+          ],
+          "request": { "method": "GET", "header": [{ "key": "authorization", "value": "Bearer {{gusToken}}" }], "url": { "raw": "{{gw}}/v1/roles", "host": ["{{gw}}"], "path": ["v1", "roles"] } }
         }
       ]
     },
     {
-      "name": "3. IAM — manage (platform-admin = Dev)",
-      "item": [
-        {
-          "name": "Create permission (catalog)",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('201 or 409 (exists)', () => pm.expect([201,409]).to.include(pm.response.code));"] } }],
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "authorization", "value": "Bearer {{devToken}}" }, { "key": "content-type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"key\": \"expense:report:export\",\n  \"description\": \"Export expense reports\"\n}" },
-            "url": { "raw": "{{gw}}/v1/permissions", "host": ["{{gw}}"], "path": ["v1", "permissions"] }
-          }
-        },
-        {
-          "name": "Create permission AS RIYA (expect 403)",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('403 (platform-admin only)', () => pm.response.to.have.status(403));"] } }],
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "authorization", "value": "Bearer {{riyaToken}}" }, { "key": "content-type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"key\": \"x:y:z\",\n  \"description\": \"should be rejected\"\n}" },
-            "url": { "raw": "{{gw}}/v1/permissions", "host": ["{{gw}}"], "path": ["v1", "permissions"] }
-          }
-        },
-        {
-          "name": "Create role (finance_auditor)",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('201 or 409', () => pm.expect([201,409]).to.include(pm.response.code));"] } }],
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "authorization", "value": "Bearer {{devToken}}" }, { "key": "content-type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"key\": \"finance_auditor\",\n  \"scope\": \"acme.finance\",\n  \"permissions\": [\"expense:report:read\", \"expense:report:export\"]\n}" },
-            "url": { "raw": "{{gw}}/v1/roles", "host": ["{{gw}}"], "path": ["v1", "roles"] }
-          }
-        }
-      ]
-    },
-    {
-      "name": "4. FR-8 dynamic role flip",
+      "name": "7 · Flip a role live (FR-8)",
       "item": [
         {
           "name": "Capture Riya's active finance_manager assignment",
           "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const items = (pm.response.json().items || []);",
-                  "const a = items.find(x => x.status === 'active' && String(x.roleId).endsWith('0001'));",
-                  "pm.test('found active finance_manager assignment', () => pm.expect(a, 'assignment').to.be.an('object'));",
-                  "if (a) { pm.environment.set('asgId', a.id); pm.environment.set('asgVer', String(a.version)); }"
-                ]
-              }
-            }
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "const items = (pm.response.json().items || []);",
+              "const a = items.find(x => x.status === 'active' && String(x.roleId).endsWith('0001'));",
+              "pm.test('found active finance_manager assignment', () => pm.expect(a, 'assignment').to.be.an('object'));",
+              "if (a) { pm.environment.set('asgId', a.id); pm.environment.set('asgVer', String(a.version)); }"
+            ] } }
           ],
           "request": { "method": "GET", "header": [{ "key": "authorization", "value": "Bearer {{devToken}}" }], "url": { "raw": "{{gw}}/v1/role-assignments?userId={{riyaSub}}", "host": ["{{gw}}"], "path": ["v1", "role-assignments"], "query": [{ "key": "userId", "value": "{{riyaSub}}" }] } }
         },
         {
-          "name": "Revoke finance_manager (If-Match)",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200', () => pm.response.to.have.status(200));"] } }],
+          "name": "Revoke finance_manager (If-Match) → 200",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200', () => pm.response.to.have.status(200));"] } }
+          ],
           "request": {
             "method": "POST",
             "header": [{ "key": "authorization", "value": "Bearer {{devToken}}" }, { "key": "if-match", "value": "\"{{asgVer}}\"" }, { "key": "content-type", "value": "application/json" }],
@@ -238,59 +353,74 @@
           }
         },
         {
-          "name": "Approve exp_42 AFTER revoke → now 403",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('403 (role revoked)', () => pm.response.to.have.status(403));"] } }],
+          "name": "Riya approves exp_43 AFTER revoke → now 403",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('403 (role revoked, fresh read)', () => pm.response.to.have.status(403));"] } }
+          ],
           "request": {
             "method": "POST",
             "header": [{ "key": "authorization", "value": "Bearer {{riyaToken}}" }, { "key": "content-type", "value": "application/json" }],
             "body": { "mode": "raw", "raw": "{}" },
-            "url": { "raw": "{{gw}}/v1/expenses/exp_42/approve", "host": ["{{gw}}"], "path": ["v1", "expenses", "exp_42", "approve"] }
+            "url": { "raw": "{{gw}}/v1/expenses/exp_43/approve", "host": ["{{gw}}"], "path": ["v1", "expenses", "exp_43", "approve"] }
           }
         },
         {
           "name": "Capture finance_manager role id",
           "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const arr = (pm.response.json().items || pm.response.json());",
-                  "const fm = arr.find(r => r.key === 'finance_manager');",
-                  "if (fm) pm.environment.set('fmRoleId', fm.id);",
-                  "pm.test('captured finance_manager id', () => pm.expect(fm, 'role').to.be.an('object'));"
-                ]
-              }
-            }
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "const arr = (pm.response.json().items || pm.response.json());",
+              "const fm = arr.find(r => r.key === 'finance_manager');",
+              "if (fm) pm.environment.set('fmRoleId', fm.id);",
+              "pm.test('captured finance_manager id', () => pm.expect(fm, 'role').to.be.an('object'));"
+            ] } }
           ],
           "request": { "method": "GET", "header": [{ "key": "authorization", "value": "Bearer {{devToken}}" }], "url": { "raw": "{{gw}}/v1/roles", "host": ["{{gw}}"], "path": ["v1", "roles"] } }
         },
         {
-          "name": "Re-grant finance_manager (restore)",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('201', () => pm.response.to.have.status(201));"] } }],
+          "name": "Re-grant finance_manager → 201",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('201', () => pm.response.to.have.status(201));"] } }
+          ],
           "request": {
             "method": "POST",
             "header": [{ "key": "authorization", "value": "Bearer {{devToken}}" }, { "key": "content-type", "value": "application/json" }],
             "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{riyaSub}}\",\n  \"roleId\": \"{{fmRoleId}}\",\n  \"scope\": \"acme.finance\"\n}" },
             "url": { "raw": "{{gw}}/v1/role-assignments", "host": ["{{gw}}"], "path": ["v1", "role-assignments"] }
           }
+        },
+        {
+          "name": "Riya approves exp_43 AFTER re-grant → ALLOWED again",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 (restored) or 409 (already approved on re-run)', () => pm.expect([200,409]).to.include(pm.response.code));"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "authorization", "value": "Bearer {{riyaToken}}" }, { "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": { "raw": "{{gw}}/v1/expenses/exp_43/approve", "host": ["{{gw}}"], "path": ["v1", "expenses", "exp_43", "approve"] }
+          }
         }
       ]
     },
     {
-      "name": "5. Dynamic policy (runtime, not hardcoded)",
+      "name": "8 · Version & roll back a policy",
       "item": [
         {
-          "name": "List policies",
+          "name": "List policy versions",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200', () => pm.response.to.have.status(200));"] } }
+          ],
           "request": { "method": "GET", "header": [{ "key": "authorization", "value": "Bearer {{devToken}}" }], "url": { "raw": "{{gw}}/v1/policies", "host": ["{{gw}}"], "path": ["v1", "policies"] } }
         },
         {
-          "name": "Publish policy (new version)",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('201', () => pm.response.to.have.status(201));"] } }],
+          "name": "Publish a new policy version → 201",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('201', () => pm.response.to.have.status(201));"] } }
+          ],
           "request": {
             "method": "POST",
             "header": [{ "key": "authorization", "value": "Bearer {{devToken}}" }, { "key": "content-type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"scope\": \"acme.finance\",\n  \"rule\": {\n    \"resource\": \"expense_report\",\n    \"rules\": [\n      {\n        \"name\": \"fm_approve\",\n        \"roles\": [\"finance_manager\"],\n        \"effect\": \"ALLOW\",\n        \"actions\": [\"read\", \"approve\"],\n        \"condition\": { \"all\": [\n          { \"expr\": \"request.resource.attr.amount < 10000\" },\n          { \"expr\": \"request.resource.attr.department == request.principal.attr.department\" }\n        ] }\n      }\n    ]\n  },\n  \"effectiveDate\": \"2026-07-01T00:00:00Z\"\n}" },
+            "body": { "mode": "raw", "raw": "{\n  \"scope\": \"acme.finance\",\n  \"effectiveDate\": \"2026-08-01T00:00:00Z\",\n  \"rule\": {\n    \"resource\": \"expense_report\",\n    \"rules\": [\n      {\n        \"name\": \"fm_approve\",\n        \"roles\": [\"finance_manager\"],\n        \"effect\": \"ALLOW\",\n        \"actions\": [\"read\", \"approve\"],\n        \"condition\": { \"all\": [\n          { \"expr\": \"request.resource.attr.amount < 10000\" },\n          { \"expr\": \"request.resource.attr.department == request.principal.attr.department\" }\n        ] }\n      }\n    ]\n  }\n}" },
             "url": { "raw": "{{gw}}/v1/policies", "host": ["{{gw}}"], "path": ["v1", "policies"] }
           }
         }

@@ -6,18 +6,21 @@ import { loadConfig } from '../../../config/config.schema';
 import dataSource from './migration-data-source';
 
 /**
- * Idempotent demo seed (DESIGN §11 demo data: Acme/Globex, Riya/Sam/Dev).
+ * Idempotent demo seed (DESIGN §11 demo data: Acme/Globex, Riya/Sam/Dev/Gwen).
  *
  * Inserts, with FIXED UUIDs so the data is stable across runs and easy to curl:
- *   - tenants:          Acme (pool) + Globex (silo)
- *   - org units:        acme, acme.finance, acme.finance.emea, globex
+ *   - tenants:          Acme (pool) + Globex (silo) — two independent clients
+ *   - org units:        acme, acme.finance, acme.finance.emea, globex, globex.ops
  *   - permission catalog (global): expense:report:read / :approve,
  *                       payroll:run:execute, invoice:invoice:approve
  *   - roles (Acme):     finance_manager (scope acme.finance -> expense:report
  *                       read+approve), engineer, org_admin
+ *   - roles (Globex):   ops_manager (scope globex.ops -> expense:report
+ *                       read+approve)
  *   - role assignments: Riya -> finance_manager @ acme.finance,
  *                       Sam   -> engineer        @ acme,
- *                       Dev   -> org_admin       @ acme
+ *                       Dev   -> org_admin       @ acme,
+ *                       Gwen  -> ops_manager     @ globex.ops
  *
  * Riya is granted at `acme.finance` (the finance org unit) — the SAME scope the
  * demo `expense_report` policy is published at and the demo expenses carry — so
@@ -43,6 +46,7 @@ const OU_ACME = '0a000000-0000-4000-8000-000000000001';
 const OU_ACME_FINANCE = '0a000000-0000-4000-8000-000000000002';
 const OU_ACME_FINANCE_EMEA = '0a000000-0000-4000-8000-000000000003';
 const OU_GLOBEX = '0b000000-0000-4000-8000-000000000001';
+const OU_GLOBEX_OPS = '0b000000-0000-4000-8000-000000000002';
 
 const PERM_EXPENSE_READ = '0c000000-0000-4000-8000-000000000001';
 const PERM_EXPENSE_APPROVE = '0c000000-0000-4000-8000-000000000002';
@@ -52,6 +56,7 @@ const PERM_INVOICE_APPROVE = '0c000000-0000-4000-8000-000000000004';
 const ROLE_FINANCE_MANAGER = '0d000000-0000-4000-8000-000000000001';
 const ROLE_ENGINEER = '0d000000-0000-4000-8000-000000000002';
 const ROLE_ORG_ADMIN = '0d000000-0000-4000-8000-000000000003';
+const ROLE_OPS_MANAGER = '0d000000-0000-4000-8000-000000000004';
 
 const ASSIGN_RIYA = '0e000000-0000-4000-8000-000000000001';
 const ASSIGN_SAM = '0e000000-0000-4000-8000-000000000002';
@@ -65,9 +70,12 @@ const ASSIGN_DEV = '0e000000-0000-4000-8000-000000000003';
 const USER_UUID_RIYA = '11111111-1111-4111-8111-111111111111';
 const USER_UUID_SAM = '22222222-2222-4222-8222-222222222222';
 const USER_UUID_DEV = '33333333-3333-4333-8333-333333333333';
+const USER_UUID_GWEN = '44444444-4444-4444-8444-444444444444';
 const ASSIGN_RIYA_UUID = '0e000000-0000-4000-8000-000000000011';
 const ASSIGN_SAM_UUID = '0e000000-0000-4000-8000-000000000012';
 const ASSIGN_DEV_UUID = '0e000000-0000-4000-8000-000000000013';
+const ASSIGN_GWEN = '0e000000-0000-4000-8000-000000000004';
+const ASSIGN_GWEN_UUID = '0e000000-0000-4000-8000-000000000014';
 
 /** Runs `fn` inside a transaction scoped to a tenant so FORCED RLS lets writes through. */
 async function withTenant(
@@ -174,12 +182,49 @@ async function seedAcme(qr: QueryRunner): Promise<void> {
 
 async function seedGlobex(qr: QueryRunner): Promise<void> {
   await withTenant(qr, TENANT_GLOBEX, async () => {
-    // Org unit: globex (root) — demonstrates the silo tenant + cross-tenant isolation.
+    // Globex is a SECOND, fully-independent client (the silo tier). It gets its OWN
+    // org tree, role and (via the bootstrap PAP publish) runtime policy so the demo
+    // can prove two tenants run side-by-side, each enforcing its own model, with
+    // neither able to see the other (RLS + the PDP tenant guardrail). Its shape
+    // deliberately differs from Acme (ops, not finance) to make isolation obvious.
+
+    // Org units: globex -> globex.ops
     await qr.query(
       `INSERT INTO "org_units" ("id","tenant_id","parent_id","path","name","version") VALUES
-         ($1,$2,NULL,'globex','Globex',1)
+         ($1,$2,NULL,'globex','Globex',1),
+         ($3,$2,$1,'globex.ops','Operations',1)
        ON CONFLICT ("id") DO NOTHING`,
-      [OU_GLOBEX, TENANT_GLOBEX],
+      [OU_GLOBEX, TENANT_GLOBEX, OU_GLOBEX_OPS],
+    );
+
+    // Role: ops_manager @ globex.ops — Globex's analogue of Acme's finance_manager.
+    await qr.query(
+      `INSERT INTO "roles" ("id","tenant_id","key","scope","description","version") VALUES
+         ($1,$2,'ops_manager','globex.ops','Manage operations — read/approve expense reports',1)
+       ON CONFLICT ("id") DO NOTHING`,
+      [ROLE_OPS_MANAGER, TENANT_GLOBEX],
+    );
+
+    // role_permissions: ops_manager -> expense:report:read + approve
+    await qr.query(
+      `INSERT INTO "role_permissions" ("role_id","permission","tenant_id") VALUES
+         ($1,'expense:report:read',$2),
+         ($1,'expense:report:approve',$2)
+       ON CONFLICT ("role_id","permission") DO NOTHING`,
+      [ROLE_OPS_MANAGER, TENANT_GLOBEX],
+    );
+
+    // role assignment: Gwen -> ops_manager @ globex.ops — keyed by the readable id
+    // AND by the Identity user UUID (the gateway -> PEP flow). Her grant scope's
+    // 2nd label ('ops') is what the PIP derives as her department, so the demo
+    // expense (department='ops', scope 'globex.ops', amount < 10000) ALLOWs.
+    await qr.query(
+      `INSERT INTO "role_assignments"
+         ("id","tenant_id","user_id","role_id","scope","status","version") VALUES
+         ($1,$3,'gwen',$2,'globex.ops','active',1),
+         ($4,$3,$5,$2,'globex.ops','active',1)
+       ON CONFLICT ("id") DO NOTHING`,
+      [ASSIGN_GWEN, ROLE_OPS_MANAGER, TENANT_GLOBEX, ASSIGN_GWEN_UUID, USER_UUID_GWEN],
     );
   });
 }
@@ -197,7 +242,7 @@ async function run(): Promise<void> {
     await seedGlobex(qr);
     // eslint-disable-next-line no-console
     console.log(
-      'Seed complete: tenants Acme(pool)/Globex(silo), 4 org units, 4 permissions, 3 roles, 3 assignments.',
+      'Seed complete: tenants Acme(pool)/Globex(silo), 5 org units, 4 permissions, 4 roles, 4 assignments.',
     );
   } finally {
     await qr.release();

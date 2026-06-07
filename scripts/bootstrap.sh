@@ -108,6 +108,11 @@ wait_for_http "$GATEWAY_URL/health" "gateway"
 # than posting raw x-tenant-id headers straight to the PAP. The gateway validates
 # Dev's JWT (which carries the platform_admin scope) and mints the signed token the
 # PAP verifies. This is the real customer path, not a test-only shortcut.
+PUBLISH_POLICY="${PUBLISH_POLICY:-true}"
+if [ "$PUBLISH_POLICY" = "false" ] || [ "$PUBLISH_POLICY" = "0" ]; then
+  log "PUBLISH_POLICY=$PUBLISH_POLICY — NOT publishing the demo policy."
+  log "Set it yourself via the API (POST /v1/policies) — see API_PLAYBOOK.md \"Set a policy via the API\"."
+else
 log "logging in as Dev (org_admin) to publish the demo policy through the gateway ..."
 ADMIN_TOKEN=$(curl -sS -X POST "$IDENTITY_URL/v1/auth/token" \
   -H 'content-type: application/json' \
@@ -149,6 +154,54 @@ case "$HTTP_CODE" in
   201|200) log "policy published (HTTP $HTTP_CODE)";;
   409) log "policy already published (HTTP 409) — continuing (idempotent)";;
   *) cat /tmp/bootstrap-publish.json; die "policy publish returned HTTP $HTTP_CODE";;
+esac
+
+# 4b) Publish the SECOND client's (Globex) policy through the gateway, as Globex's
+# OWN admin (Gus, tid=Globex). This proves two independent tenants each author
+# their own runtime policy: Gus can only ever write Globex's policy (his verified
+# `tid` scopes the write), never Acme's. We publish it BEFORE the effective-wait
+# below so the single Cerbos reload picks up BOTH tenants' policies at once.
+log "logging in as Gus (Globex admin) to publish Globex's policy through the gateway ..."
+GLOBEX_TOKEN=$(curl -sS -X POST "$IDENTITY_URL/v1/auth/token" \
+  -H 'content-type: application/json' \
+  -d '{"email":"gus@globex.com","password":"Password123!"}' | jq -r .accessToken) \
+  || die "Globex admin login request failed"
+[ -n "$GLOBEX_TOKEN" ] && [ "$GLOBEX_TOKEN" != "null" ] || die "Globex admin login did not return an access token"
+
+log "publishing the Globex ops expense_report policy through the gateway ..."
+GLOBEX_PUBLISH_BODY=$(cat <<JSON
+{
+  "scope": "globex.ops",
+  "effectiveDate": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "rule": {
+    "resource": "expense_report",
+    "rules": [
+      {
+        "name": "ops_manager_approve",
+        "actions": ["read", "approve"],
+        "effect": "ALLOW",
+        "roles": ["ops_manager"],
+        "condition": {
+          "all": [
+            { "expr": "request.resource.attr.amount < 10000" },
+            { "expr": "request.resource.attr.department == request.principal.attr.department" }
+          ]
+        }
+      }
+    ]
+  }
+}
+JSON
+)
+GLOBEX_HTTP_CODE=$(curl -sS -o /tmp/bootstrap-publish-globex.json -w '%{http_code}' \
+  -X POST "$GATEWAY_URL/v1/policies" \
+  -H 'content-type: application/json' \
+  -H "authorization: Bearer $GLOBEX_TOKEN" \
+  -d "$GLOBEX_PUBLISH_BODY") || die "Globex policy publish request failed"
+case "$GLOBEX_HTTP_CODE" in
+  201|200) log "Globex policy published (HTTP $GLOBEX_HTTP_CODE)";;
+  409) log "Globex policy already published (HTTP 409) — continuing (idempotent)";;
+  *) cat /tmp/bootstrap-publish-globex.json; die "Globex policy publish returned HTTP $GLOBEX_HTTP_CODE";;
 esac
 
 # 5) Wait until the published policy is effective in Cerbos -------------------
@@ -210,7 +263,21 @@ for _ in $(seq 1 20); do
   [ "$WARM_CODE" = "200" ] && break
   sleep 1
 done
-log "request path warm (GET /v1/expenses -> $WARM_CODE)"
+log "request path warm (Acme/Riya GET /v1/expenses -> $WARM_CODE)"
+
+# Warm the SECOND client's path too (Globex/Gwen) so the first Globex demo call is
+# reliable, and confirm Globex's runtime policy is effective end-to-end.
+WARM_TOKEN_GLOBEX=$(curl -sS -X POST "$IDENTITY_URL/v1/auth/token" -H 'content-type: application/json' \
+  -d '{"email":"gwen@globex.com","password":"Password123!"}' 2>/dev/null | jq -r .accessToken)
+WARM_CODE_GLOBEX=000
+for _ in $(seq 1 20); do
+  WARM_CODE_GLOBEX=$(curl -sS -o /dev/null -w '%{http_code}' "$GATEWAY_URL/v1/expenses" \
+    -H "authorization: Bearer $WARM_TOKEN_GLOBEX" 2>/dev/null || echo 000)
+  [ "$WARM_CODE_GLOBEX" = "200" ] && break
+  sleep 1
+done
+log "request path warm (Globex/Gwen GET /v1/expenses -> $WARM_CODE_GLOBEX)"
+fi
 
 cat <<DONE
 
@@ -231,5 +298,14 @@ Try the demo (DESIGN §11) — log in at the Identity IdP, then call the gateway
   curl -sS -X POST $GATEWAY_URL/v1/expenses/exp_99/approve \\
        -H "authorization: Bearer \$TOKEN" -H 'content-type: application/json' -d '{}'
 
-See RUNNING.md for the full walk-through (tenant-isolation + dynamic-revocation cases).
+  # 4) SECOND CLIENT (Globex): Gwen (ops_manager) approves a \$3,200 ops expense -> 200
+  GTOKEN=\$(curl -sS -X POST http://localhost:3200/v1/auth/token \\
+            -H 'content-type: application/json' \\
+            -d '{"email":"gwen@globex.com","password":"Password123!"}' | jq -r .accessToken)
+  curl -sS -X POST $GATEWAY_URL/v1/expenses/exp_gx1/approve \\
+       -H "authorization: Bearer \$GTOKEN" -H 'content-type: application/json' -d '{}'
+
+The full, narrated walk-through (onboard a client -> provision its model via the API
+-> sign in -> happy path -> escalating denials -> live revocation, for BOTH clients)
+is in API_PLAYBOOK.md — runnable as a Postman runner or copy-paste curl.
 DONE

@@ -1,219 +1,287 @@
-# API Playbook
+# API Playbook — one story, end to end
 
-Drive the whole authorization platform end-to-end. **Pick one:**
+This drives the **whole platform** as a single narrative an interviewer can follow top to bottom:
 
-- 🟢 **[Option A — Postman (easiest)](#opt-postman):** import the collection and click **Run**. It logs in, captures tokens, and runs every flow with pass/fail assertions — no other setup.
-- 🧰 **[Option B — curl (manual)](#opt-curl):** copy-paste the recipes below; every request is verified against the live stack.
-- 🔎 **Bonus — Swagger UI:** click through in the browser at `http://localhost:8080/docs` (Authorize with a token from §1).
+> **onboard a client → provision its access model *through the API* → sign in → a happy-path decision → escalating denials → a second, fully-isolated client → flip a role live → version a policy.**
 
-- **Design contracts:** [DESIGN.md §8](./DESIGN.md#s8) · **Customer flows:** [CUSTOMER_FLOWS.md](./CUSTOMER_FLOWS.md) · **Run the stack:** [RUNNING.md](./RUNNING.md)
+Every role and every policy you see is **created at runtime through the API and stored in the database — nothing is hardcoded** ([DESIGN §8.7](./DESIGN.md#s8)). The same story runs two ways; pick one:
+
+- 🟢 **[Postman runner](#run-it-in-postman) (easiest):** import two files, click **Run**. It executes the whole story in order with pass/fail assertions.
+- 🧰 **[curl](#the-story-in-curl) (copy-paste):** the numbered acts below. Every request was verified against the live stack.
+- 🔎 **Swagger UI:** browse/try at `http://localhost:8080/docs` (Authorize with a token from Act 1).
+
+**See also:** [DESIGN.md §8](./DESIGN.md#s8) (API & data contracts) · [CUSTOMER_FLOWS.md](./CUSTOMER_FLOWS.md) · [RUNNING.md](./RUNNING.md).
 
 ---
 
-## 0. Prerequisites
+## 0. Setup & the cast
 
-Bring the stack up and seed it ([RUNNING.md](./RUNNING.md)):
+Bring the stack up and seed it — run on a **freshly-bootstrapped** stack so the demo expenses are `pending`:
 
 ```bash
 docker compose up -d && ./scripts/bootstrap.sh
-# If a local Postgres holds :5432 (e.g. a Homebrew postgres or another container):
+# If a local Postgres holds :5432 (Homebrew/another container), only Postgres' host port moves:
 #   PG_HOST_PORT=5544 docker compose up -d && PG_PORT=5544 ./scripts/bootstrap.sh
-# (The app ports below never change — only Postgres' host port does.)
 ```
-
-> Run the recipes on a **freshly-bootstrapped** stack so `exp_42` is `pending` and the ALLOW recipe returns a clean `200` (re-approving an already-approved expense correctly returns `409`).
-
-| Service | URL | Role |
-|---|---|---|
-| **Identity** (IdP) | `http://localhost:3200` | issues JWTs |
-| **API Gateway** | `http://localhost:8080` | the only public entry — validates JWT, mints the signed internal token, routes |
-| Demo UI | `http://localhost:8081` | clickable demo |
 
 ```bash
-export IDP=http://localhost:3200
-export GW=http://localhost:8080
+export IDP=http://localhost:3200      # Identity (IdP) — issues JWTs
+export GW=http://localhost:8080       # API Gateway — the ONLY public entry; validates JWT, mints the signed internal token, routes
 ```
 
-### Conventions
-- **Auth:** gateway calls carry `Authorization: Bearer <accessToken>`. The token holds **identity + tenant only** — *no permissions* (resolved per request, so a revocation takes effect without waiting for the token to expire).
-- **List endpoints are cursor-paginated:** `{ "items": [...], "nextCursor": null, "hasMore": false }`. The recipes use `(.items // .)[]` so they work whether a route returns `{items}` or a bare array.
-- **Error envelope** (4xx/5xx): `{ "error": { "code", "message", "reason", "decisionId?", "traceId" } }`.
-- **Platform-admin** surfaces (tenant lifecycle, the global permission catalog, role grant/revoke) require a platform-admin token — here, **Dev**. Non-admins get `403`.
-- **Seeded users** (password `Password123!`): `riya@acme.com` (finance_manager), `sam@acme.com` (engineer), `dev@acme.com` (org_admin / platform-admin).
+**Two tenants are seeded, so isolation is real — not a single-tenant toy.** Password for everyone: `Password123!`.
+
+| Client | Tenant id | Users (email) | Role |
+|---|---|---|---|
+| **Acme** (pool tier) | `aaaaaaaa-…-000000000001` | `dev@acme.com` | org admin / **platform-admin** |
+| | | `riya@acme.com` | **finance_manager** @ `acme.finance` |
+| | | `sam@acme.com` | engineer @ `acme` |
+| **Globex** (silo tier) | `bbbbbbbb-…-000000000002` | `gus@globex.com` | Globex admin / **platform-admin** |
+| | | `gwen@globex.com` | **ops_manager** @ `globex.ops` |
+
+Demo expenses (each carries an `amount`, `department`, and org `scope`):
+
+| Expense | Tenant | Amount | Dept / scope | Used for |
+|---|---|---|---|---|
+| `exp_42` | Acme | $8,500 | finance / `acme.finance` | happy-path **ALLOW** |
+| `exp_43` | Acme | $1,200 | finance / `acme.finance` | FR-8 live role-flip |
+| `exp_99` | Acme | $25,000 | finance / `acme.finance` | **DENY** (amount cap) |
+| `exp_gx1` | Globex | $3,200 | ops / `globex.ops` | Globex **ALLOW** |
+| `exp_gx2` | Globex | $42,000 | ops / `globex.ops` | Globex **DENY** (amount cap) |
+| `exp_glx` | Globex | $4,200 | ops / `globex` | cross-tenant isolation |
+
+**Conventions.** Gateway calls carry `Authorization: Bearer <accessToken>`. The token holds **identity + tenant only — no permissions** (resolved per request, so a revoke takes effect immediately, not when the token expires — [D4](./DESIGN.md#s5)). List endpoints are cursor-paginated (`{items, nextCursor, hasMore}`) — recipes use `(.items // .)[]`. Errors use one envelope: `{ "error": { code, message, reason?, decisionId?, traceId } }`.
 
 ---
 
-<a id="opt-postman"></a>
-## Option A — Postman (easiest)
+## The story in curl
 
-~30 seconds, no setup beyond import:
+### Act 1 — Authenticate
 
-1. **Import** both files from [`postman/`](./postman/) — in Postman, *Import* → drag both in:
-   - `postman/authz-platform.postman_collection.json`
-   - `postman/authz-platform.postman_environment.json`
-2. **Select** the **Authz Platform (local)** environment (top-right dropdown).
-3. Make sure the stack is up ([§0 Prerequisites](#0-prerequisites)).
-4. **Run the runner:** on the collection, **⋯ → Run**, then **Run Authz Platform**. The Collection Runner fires all 23 requests in order; the **0. Auth** folder logs in and captures the tokens, so every later request is pre-authorized.
-5. Every request asserts its expected result — login `200` · ALLOW `200` · ABAC `403` · isolation `404` · RBAC `403` · admin `201`/`403` · FR-8 revoke→deny→re-grant · policy publish `201` — all green.
-
-> Prefer clicking individual requests? Run **0. Auth → Login as Riya / Dev / Sam** once, then fire any request. (Re-bootstrap the stack for a clean `200` on the ALLOW case — re-approving an already-approved expense returns `409`.)
-
-The collection mirrors the curl recipes below 1:1 and already sets `content-type: application/json` on every call.
-
-<a id="opt-curl"></a>
-## Option B — curl (manual)
-
-The numbered sections below (§1 onward) are copy-paste `curl`. A **Swagger UI** is also live if you prefer clicking — open it and hit **Authorize** with a `Bearer <accessToken>` from §1:
-
-| Swagger UI | OpenAPI JSON |
-|---|---|
-| Gateway (public entry): `http://localhost:8080/docs` | `http://localhost:8080/docs-json` |
-| Identity (login/JWKS): `http://localhost:3200/docs` | `http://localhost:3200/docs-json` |
-| Expense (PEP): `http://localhost:3300/docs` | `http://localhost:3300/docs-json` |
-
-*(Authorization Admin and Audit are internal-only — reach them through the gateway.)*
-
----
-
-## 1. Authenticate
+The IdP issues an RS256 JWT for a password grant. Capture a token (and `sub`) per persona:
 
 ```bash
-export RIYA=$(curl -sS -X POST $IDP/v1/auth/token -H 'content-type: application/json' \
-  -d '{"email":"riya@acme.com","password":"Password123!"}' | jq -r .accessToken)
-export DEV=$(curl -sS -X POST $IDP/v1/auth/token -H 'content-type: application/json' \
-  -d '{"email":"dev@acme.com","password":"Password123!"}' | jq -r .accessToken)
-export SAM=$(curl -sS -X POST $IDP/v1/auth/token -H 'content-type: application/json' \
-  -d '{"email":"sam@acme.com","password":"Password123!"}' | jq -r .accessToken)
-export RIYA_SUB=$(curl -sS -X POST $IDP/v1/auth/token -H 'content-type: application/json' \
-  -d '{"email":"riya@acme.com","password":"Password123!"}' | jq -r .sub)
+login() { curl -sS -X POST $IDP/v1/auth/token -H 'content-type: application/json' \
+  -d "{\"email\":\"$1\",\"password\":\"Password123!\"}"; }
+
+DEV=$(login dev@acme.com   | jq -r .accessToken)   # Acme platform-admin
+RIYA=$(login riya@acme.com | jq -r .accessToken)   # Acme finance_manager
+SAM=$(login sam@acme.com   | jq -r .accessToken)   # Acme engineer
+GUS=$(login gus@globex.com | jq -r .accessToken)   # Globex platform-admin
+GWEN=$(login gwen@globex.com | jq -r .accessToken) # Globex ops_manager
+RIYA_SUB=$(login riya@acme.com | jq -r .sub)
+SAM_SUB=$(login sam@acme.com  | jq -r .sub)
 ```
-Response: `{ "accessToken", "tokenType":"Bearer", "expiresIn":900, "refreshToken", "sub", "tid", "sid" }`.
-Claims are `sub`/`tid`/`sid`/`act`/`iss`/`aud`/`iat`/`exp` — **no permissions** (DESIGN D4).
 
-Bad credentials → `401`:
+Response: `{ accessToken, tokenType:"Bearer", expiresIn:900, refreshToken, sub, tid, sid }`. Claims are `sub/tid/sid/act/iss/aud/iat/exp` — **no roles, no permissions**.
+
 ```bash
+# Bad credentials -> 401 (generic message; no account enumeration)
 curl -sS -o /dev/null -w "%{http_code}\n" -X POST $IDP/v1/auth/token \
   -H 'content-type: application/json' -d '{"email":"riya@acme.com","password":"wrong"}'   # 401
 ```
 
----
+### Act 2 — Onboard a new client (tenant)
 
-## 2. The authorization decisions (the core)
+Tenant lifecycle is an API, gated to **platform-admins**:
 
 ```bash
-# Expenses Riya can see (tenant-scoped)
+# Dev (platform-admin) onboards a new client -> 201
+curl -sS -X POST $GW/v1/tenants -H "authorization: Bearer $DEV" -H 'content-type: application/json' \
+  -d '{"name":"Initech","slug":"initech-001","isolationTier":"pool"}' | jq -c '{id,name,slug,status,isolationTier}'
+
+# A non-admin (Riya) is refused -> 403
+curl -sS -o /dev/null -w "%{http_code}\n" -X POST $GW/v1/tenants -H "authorization: Bearer $RIYA" \
+  -H 'content-type: application/json' -d '{"name":"X","slug":"x-co"}'                       # 403
+```
+
+> **Provisioning a brand-new tenant's *model* (org/roles/policies) is done by signing in as *that tenant's* admin** — every write is scoped by the caller's verified `tid`, so a platform-admin can never write into another tenant's data (confused-deputy defense, [§7](./DESIGN.md#s7)). The two demoable clients (Acme, Globex) ship with their admins seeded, so we provision against them next. (Identity here has no self-serve sign-up endpoint — users are provisioned out-of-band; the seed stands in for that.)
+
+### Act 3 — Provision an access model *through the API* (nothing hardcoded)
+
+Build a brand-new capability for Acme entirely via the API — catalog a permission, define a role bound to it, grant it to a user, then publish the rule that governs the decision. Dev is Acme's platform-admin.
+
+```bash
+# 1) Register a permission in the global catalog  (key = service:resource:action)
+curl -sS -X POST $GW/v1/permissions -H "authorization: Bearer $DEV" -H 'content-type: application/json' \
+  -d '{"key":"expense:report:export","description":"Export expense reports"}' | jq -c '{id,key}'        # 201 (409 if re-run)
+
+# 2) Define a tenant role at an org scope, bound to permissions
+curl -sS -X POST $GW/v1/roles -H "authorization: Bearer $DEV" -H 'content-type: application/json' \
+  -d '{"key":"finance_auditor","scope":"acme.finance","permissions":["expense:report:read","expense:report:export"]}' \
+  | jq -c '{id,key,scope,permissions}'                                                                   # 201 (409 if re-run)
+
+# 3) Grant the role to Sam at that scope (delegatedBy is stamped server-side, never from the body)
+AUDITOR_ID=$(curl -sS $GW/v1/roles -H "authorization: Bearer $DEV" | jq -r '(.items // .)[]|select(.key=="finance_auditor").id')
+curl -sS -X POST $GW/v1/role-assignments -H "authorization: Bearer $DEV" -H 'content-type: application/json' \
+  -d "{\"userId\":\"$SAM_SUB\",\"roleId\":\"$AUDITOR_ID\",\"scope\":\"acme.finance\"}" | jq -c '{id,status}'  # 201 (409)
+
+# 4) Publish the RULE that drives the decision (DB-backed jsonb; compiled to the PDP). This is the
+#    finance_manager approve rule the next act exercises: same-department AND amount < 10000.
+curl -sS -X POST $GW/v1/policies -H "authorization: Bearer $DEV" -H 'content-type: application/json' -d '{
+  "scope":"acme.finance",
+  "effectiveDate":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'",
+  "rule":{"resource":"expense_report","rules":[{"name":"fm_approve","roles":["finance_manager"],
+    "effect":"ALLOW","actions":["read","approve"],
+    "condition":{"all":[{"expr":"request.resource.attr.amount < 10000"},
+                        {"expr":"request.resource.attr.department == request.principal.attr.department"}]}}]}
+}' | jq -c '{id,scope,version,status}'                                                                   # 201
+
+# Read the model back — it's all data:
+curl -sS $GW/v1/roles    -H "authorization: Bearer $DEV" | jq -c '(.items // .)[] | {key,scope,permissions}'
+curl -sS $GW/v1/policies -H "authorization: Bearer $DEV" | jq -c '(.items // .)[] | {scope,version,status}'
+```
+
+> **How a published policy reaches the engine.** The PAP compiles the DB rule into a scoped Cerbos policy. On **Linux/CI** Cerbos hot-reloads it automatically; on **macOS Docker Desktop** the file-watch can't cross the VM bind-mount, so `bootstrap.sh` loads published policies with a one-time Cerbos restart. Either way the rule is **runtime-defined and DB-backed, never compiled into a service**. The decisions below run against the rule the bootstrap already made effective; **Act 7 (FR-8)** is the zero-reload live proof — it flips a decision in-process with no policy reload at all.
+
+### Act 4 — The happy path (a real decision)
+
+Riya is a `finance_manager` in Acme's finance org. She lists what she can act on (the list is **authorization-aware** — it returns only rows she's allowed to touch), then approves a same-department expense under the cap:
+
+```bash
 curl -sS $GW/v1/expenses -H "authorization: Bearer $RIYA" | jq -c '(.items // .)[] | {id,amount,department,status}'
 
-# ✅ ALLOW — $8,500 same-dept → 200
+# ✅ ALLOW — $8,500, same department, under $10k -> 200
 curl -sS -X POST $GW/v1/expenses/exp_42/approve \
-  -H "authorization: Bearer $RIYA" -H 'content-type: application/json' -d '{}' | jq
-# { "id":"exp_42", "status":"approved", "approvedBy":"…", "decisionId":"dec_…" }
+  -H "authorization: Bearer $RIYA" -H 'content-type: application/json' -d '{}' | jq '{id,status,decisionId}'
+# { "id":"exp_42", "status":"approved", "decisionId":"dec_…" }
+```
 
-# ❌ DENY (ABAC amount<10000) — $25,000 → 403
+### Act 5 — The tweaks (escalating denials, each a different control)
+
+Same user, same endpoint — only the request changes, and a *different* layer says no each time:
+
+```bash
+# ❌ ABAC amount cap — $25,000 fails `amount < 10000` -> 403 (with reason + decisionId)
 curl -sS -X POST $GW/v1/expenses/exp_99/approve \
   -H "authorization: Bearer $RIYA" -H 'content-type: application/json' -d '{}' | jq .error
 # { "code":"forbidden", "reason":"denied by expense_report/acme.finance", "decisionId":"dec_…", … }
 
-# ❌ DENY (RBAC) — Sam (engineer) → 403
+# ❌ RBAC — Sam is an engineer, not a finance_manager -> 403
 curl -sS -o /dev/null -w "%{http_code}\n" -X POST $GW/v1/expenses/exp_42/approve \
-  -H "authorization: Bearer $SAM" -H 'content-type: application/json' -d '{}'   # 403
-```
+  -H "authorization: Bearer $SAM" -H 'content-type: application/json' -d '{}'                # 403
 
----
-
-## 3. Tenant isolation
-
-Riya (Acme) can't even see a Globex resource — Postgres RLS hides it, so the PEP loads nothing → **404** (the strongest guardrail; it won't confirm the row exists):
-
-```bash
+# ❌ Tenant isolation — Riya (Acme) reaches for a Globex expense -> 404
+#    Postgres RLS hides the row entirely, so the PEP can't even confirm it exists.
 curl -sS -o /dev/null -w "%{http_code}\n" -X POST $GW/v1/expenses/exp_glx/approve \
-  -H "authorization: Bearer $RIYA" -H 'content-type: application/json' -d '{}'   # 404
-```
-The same holds across admin reads — an Acme admin's `/v1/roles`, `/v1/role-assignments`, `/v1/policies` only ever return Acme rows.
-
----
-
-## 4. IAM — read the model (PAP)
-
-```bash
-curl -sS $GW/v1/roles        -H "authorization: Bearer $DEV" | jq -c '(.items // .)[] | {key,scope,permissions}'
-curl -sS $GW/v1/permissions  -H "authorization: Bearer $DEV" | jq -c '(.items // .)[] | {key,description}'
-curl -sS $GW/v1/org-units    -H "authorization: Bearer $DEV" | jq -c '(.items // .)[] | {path,name}'
-curl -sS "$GW/v1/role-assignments?userId=$RIYA_SUB" -H "authorization: Bearer $DEV" \
-  | jq -c '.items[] | {id,roleId,scope,status,version}'
+  -H "authorization: Bearer $RIYA" -H 'content-type: application/json' -d '{}'               # 404
 ```
 
-## 5. IAM — manage roles & permissions (platform-admin = Dev)
+### Act 6 — A second client, fully isolated, with its *own* runtime policy
+
+Globex is a different company on the same platform. Gwen (Globex `ops_manager`) approves a Globex expense — decided by **Globex's own published policy** (`globex.ops`), not Acme's. Then the same two-way isolation in reverse:
 
 ```bash
-# Create a global-catalog permission (key = service:resource:action)
-curl -sS -X POST $GW/v1/permissions -H "authorization: Bearer $DEV" -H 'content-type: application/json' \
-  -d '{"key":"expense:report:export","description":"Export expense reports"}' | jq -c '{id,key}'    # 201
+# ✅ Globex ALLOW — Gwen approves $3,200 ops expense under Globex's own rule -> 200
+curl -sS -X POST $GW/v1/expenses/exp_gx1/approve \
+  -H "authorization: Bearer $GWEN" -H 'content-type: application/json' -d '{}' | jq '{id,status,decisionId}'
 
-# Create a tenant role scoped to an org node, bound to permissions
-curl -sS -X POST $GW/v1/roles -H "authorization: Bearer $DEV" -H 'content-type: application/json' \
-  -d '{"key":"finance_auditor","scope":"acme.finance","permissions":["expense:report:read","expense:report:export"]}' \
-  | jq -c '{id,key,scope}'                                                                           # 201
+# ❌ Globex DENY — $42,000 fails Globex's amount cap -> 403
+curl -sS -o /dev/null -w "%{http_code}\n" -X POST $GW/v1/expenses/exp_gx2/approve \
+  -H "authorization: Bearer $GWEN" -H 'content-type: application/json' -d '{}'               # 403
 
-# Assign a role at a scope (delegatedBy is stamped server-side, never from the body)
-FM_ID=$(curl -sS $GW/v1/roles -H "authorization: Bearer $DEV" | jq -r '(.items // .)[]|select(.key=="finance_manager").id')
-curl -sS -X POST $GW/v1/role-assignments -H "authorization: Bearer $DEV" -H 'content-type: application/json' \
-  -d "{\"userId\":\"$RIYA_SUB\",\"roleId\":\"$FM_ID\",\"scope\":\"acme.finance\"}" | jq -c '{id,status}'  # 201
+# ❌ Isolation in reverse — Gwen (Globex) reaches for an Acme expense -> 404
+curl -sS -o /dev/null -w "%{http_code}\n" -X POST $GW/v1/expenses/exp_42/approve \
+  -H "authorization: Bearer $GWEN" -H 'content-type: application/json' -d '{}'               # 404
 
-# A non-admin write is refused:
-curl -sS -o /dev/null -w "%{http_code}\n" -X POST $GW/v1/permissions -H "authorization: Bearer $RIYA" \
-  -H 'content-type: application/json' -d '{"key":"x:y:z","description":"t"}'                          # 403
+# Isolation at the ADMIN layer too — Globex's admin sees ONLY Globex roles (RLS), never Acme's.
+curl -sS $GW/v1/roles -H "authorization: Bearer $GUS" | jq -c '[(.items // .)[].key]'        # ["ops_manager"]
 ```
 
-## 6. Dynamic role management — the FR-8 live flip
+### Act 7 — Flip a role live (FR-8): no redeploy, no token wait
 
-Revoke Riya's `finance_manager`; the *same* approve flips to deny within seconds (no redeploy, no token wait), then re-grant to restore.
+Revoke Riya's `finance_manager` and the *same* approve flips to **deny within the request** — then re-grant and it flips back. (`approve` forces a fresh permission read, so there's no staleness window — [§9.1](./DESIGN.md#s9).) Uses `exp_43` so the happy-path approve didn't consume it:
 
 ```bash
-# 1) Find her finance_manager assignment id + version
+# 1) Find her active finance_manager assignment (id + version for optimistic concurrency)
 read ASG_ID ASG_VER < <(curl -sS "$GW/v1/role-assignments?userId=$RIYA_SUB" -H "authorization: Bearer $DEV" \
   | jq -r '.items[] | select(.status=="active" and (.roleId|endswith("0001"))) | "\(.id) \(.version)"' | head -1)
 
-# 2) Revoke (platform-admin; optimistic concurrency via If-Match; emits RoleAssignmentRevoked)
+# 2) Revoke (platform-admin; If-Match optimistic concurrency; emits RoleAssignmentRevoked) -> 200
 curl -sS -o /dev/null -w "revoke: %{http_code}\n" -X POST $GW/v1/role-assignments/$ASG_ID/revoke \
-  -H "authorization: Bearer $DEV" -H "if-match: \"$ASG_VER\"" -H 'content-type: application/json' -d '{}'   # 200
+  -H "authorization: Bearer $DEV" -H "if-match: \"$ASG_VER\"" -H 'content-type: application/json' -d '{}'
 
-# 3) Riya approves → now DENIED (role gone)
-curl -sS -o /dev/null -w "approve after revoke: %{http_code}\n" -X POST $GW/v1/expenses/exp_42/approve \
-  -H "authorization: Bearer $RIYA" -H 'content-type: application/json' -d '{}'                              # 403
+# 3) Riya approves exp_43 -> now DENIED (role gone) -> 403
+curl -sS -o /dev/null -w "approve after revoke: %{http_code}\n" -X POST $GW/v1/expenses/exp_43/approve \
+  -H "authorization: Bearer $RIYA" -H 'content-type: application/json' -d '{}'               # 403
 
-# 4) Re-grant to restore
+# 4) Re-grant finance_manager -> 201
 FM_ID=$(curl -sS $GW/v1/roles -H "authorization: Bearer $DEV" | jq -r '(.items // .)[]|select(.key=="finance_manager").id')
 curl -sS -o /dev/null -w "re-grant: %{http_code}\n" -X POST $GW/v1/role-assignments \
   -H "authorization: Bearer $DEV" -H 'content-type: application/json' \
-  -d "{\"userId\":\"$RIYA_SUB\",\"roleId\":\"$FM_ID\",\"scope\":\"acme.finance\"}"                          # 201
+  -d "{\"userId\":\"$RIYA_SUB\",\"roleId\":\"$FM_ID\",\"scope\":\"acme.finance\"}"           # 201
+
+# 5) Same approve -> ALLOWED again -> 200 (on a fresh stack; 409 if exp_43 was already approved)
+curl -sS -o /dev/null -w "approve after re-grant: %{http_code}\n" -X POST $GW/v1/expenses/exp_43/approve \
+  -H "authorization: Bearer $RIYA" -H 'content-type: application/json' -d '{}'               # 200
 ```
 
-## 7. Dynamic policy management — rules defined at runtime, never hardcoded
+### Act 8 — Version & roll back a policy
+
+Policies are versioned, immutable rows. Publish a new version, list the history, roll back:
 
 ```bash
-# Inspect the published policy for acme.finance (rule is versioned JSON)
-curl -sS $GW/v1/policies -H "authorization: Bearer $DEV" | jq -c '(.items // .)[] | {scope,version,status}'
+curl -sS $GW/v1/policies -H "authorization: Bearer $DEV" | jq -c '(.items // .)[] | {id,scope,version,status}'
 
-# Publish a new version (note the rule carries "resource"; version auto-increments)
+# Publish a new version of the acme.finance rule (version auto-increments) -> 201
 curl -sS -X POST $GW/v1/policies -H "authorization: Bearer $DEV" -H 'content-type: application/json' -d '{
   "scope":"acme.finance",
+  "effectiveDate":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'",
   "rule":{"resource":"expense_report","rules":[{"name":"fm_approve","roles":["finance_manager"],
     "effect":"ALLOW","actions":["read","approve"],
     "condition":{"all":[{"expr":"request.resource.attr.amount < 10000"},
-                        {"expr":"request.resource.attr.department == request.principal.attr.department"}]}}]},
-  "effectiveDate":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"
-}' | jq -c '{id,scope,version,status}'                                                                # 201
+                        {"expr":"request.resource.attr.department == request.principal.attr.department"}]}}]}
+}' | jq -c '{id,scope,version,status}'                                                       # 201
 
-# Roll back to a prior version (creates a new version restoring it)
-# POL_ID=<id from the list>; curl -sS -X POST $GW/v1/policies/$POL_ID/rollback \
-#   -H "authorization: Bearer $DEV" -H 'content-type: application/json' -d '{"toVersion":1}'
+# Roll a scope back to a prior version (creates a NEW version restoring it):
+# POL_ID=<id from the list>
+# curl -sS -X POST $GW/v1/policies/$POL_ID/rollback -H "authorization: Bearer $DEV" \
+#   -H 'content-type: application/json' -d '{"toVersion":1}'
 ```
+
+---
+
+## Run it in Postman
+
+The collection runs **the same eight acts** with assertions baked in — about 30 seconds, no setup beyond import:
+
+1. **Import** both files from [`postman/`](./postman/) (*Import* → drag both in):
+   - `postman/authz-platform.postman_collection.json`
+   - `postman/authz-platform.postman_environment.json`
+2. **Select** the **Authz Platform (local)** environment (top-right).
+3. Make sure the stack is up and freshly bootstrapped ([Act 0](#0-setup--the-cast)).
+4. On the collection, **⋯ → Run**, then **Run**. The folders execute in order:
+
+| Folder | What it proves | Key assertions |
+|---|---|---|
+| `1 · Authenticate` | password grant for all 5 personas; tokens captured automatically | login `200`; bad creds `401` |
+| `2 · Onboard a client` | tenant lifecycle is API + platform-admin gated | Dev `201`; Riya `403` |
+| `3 · Provision a model` | permission → role → assignment → **policy**, all via API | each `201` (or `409` on re-run) |
+| `4 · Happy path` | a real ALLOW decision | approve `200` (or `409` if already approved) |
+| `5 · Tweaks` | amount / RBAC / isolation denials | `403` · `403` · `404` |
+| `6 · Second client` | Globex's own policy + two-way isolation | `200` · `403` · `404`; admin sees only `ops_manager` |
+| `7 · FR-8 live flip` | revoke → deny → re-grant → allow | `200` · `403` · `201` · `200`/`409` |
+| `8 · Policy versions` | publish a new version | list `200`; publish `201` |
+
+> Prefer clicking individual requests? Run **`1 · Authenticate`** once (it captures every token), then fire any request. Re-bootstrap for a pristine run — re-approving an already-approved expense correctly returns `409`.
+
+---
+
+## Swagger UI (browse & try)
+
+| Service | Swagger UI | OpenAPI JSON |
+|---|---|---|
+| Gateway (public entry) | `http://localhost:8080/docs` | `/docs-json` |
+| Identity (login/JWKS) | `http://localhost:3200/docs` | `/docs-json` |
+| Expense (PEP) | `http://localhost:3300/docs` | `/docs-json` |
+
+Click **Authorize**, paste `Bearer <accessToken>` from Act 1. *(Authorization Admin and Audit are internal-only — reach them through the gateway.)*
 
 ---
 
 ## Notes
-- **The decision API is internal.** Services call the co-located Cerbos PDP over the mesh (the `/pdp/v1/check` shape in DESIGN §8.2); it is never exposed at the public gateway. You exercise it through the business endpoints.
-- **Audit.** Every decision (allow *and* deny) + admin change is written to a tamper-evident hash-chained log, linked by `decisionId`/`traceId`.
-- **Idempotency & concurrency.** Mutations accept `Idempotency-Key`; updates use `If-Match` optimistic concurrency (see §6).
-- **Service-to-service.** Internal calls carry mTLS workload identity + a signed internal token; the callee re-authorizes for the original principal (defeats confused-deputy, DESIGN §7).
+
+- **The decision API is internal.** Each service calls its co-located Cerbos PDP over the mesh (`/pdp/v1/check`, [§8.2](./DESIGN.md#s8)); it is never exposed publicly. You exercise it through business endpoints.
+- **Everything is audited.** Every decision (allow *and* deny) and every admin change is written to a tamper-evident hash-chained log, linked by `decisionId`/`traceId`.
+- **Idempotency & concurrency.** Mutations accept `Idempotency-Key`; updates use `If-Match` optimistic concurrency (Act 7).
+- **Service-to-service.** Internal calls carry mTLS workload identity + a signed internal token; the callee re-authorizes for the *original* principal — defeating the confused deputy ([§7](./DESIGN.md#s7)).
