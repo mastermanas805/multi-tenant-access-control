@@ -161,13 +161,38 @@ WARMUP=$(cat <<JSON
    "actions":["approve"]}]}
 JSON
 )
-for _ in $(seq 1 60); do
-  EFFECT=$(curl -fsS -X POST "$CERBOS_HTTP_URL/api/check/resources" \
+policy_effective() {
+  curl -fsS -X POST "$CERBOS_HTTP_URL/api/check/resources" \
     -H 'content-type: application/json' -d "$WARMUP" 2>/dev/null \
-    | grep -o '"approve":"EFFECT_ALLOW"' || true)
-  if [ -n "$EFFECT" ]; then log "policy is EFFECTIVE in Cerbos"; break; fi
+    | grep -q '"approve":"EFFECT_ALLOW"'
+}
+
+EFFECTIVE=0
+# First, give Cerbos's file watcher a chance (watchForChanges fires on Linux
+# bind-mounts, e.g. CI and Linux hosts).
+for _ in $(seq 1 15); do
+  if policy_effective; then EFFECTIVE=1; break; fi
   sleep 1
 done
+
+# Fallback for Docker Desktop on macOS: host->VM inotify does NOT cross the
+# bind-mount, so watchForChanges never fires there. Restart Cerbos so it re-reads
+# /policies at startup (OS-independent), then poll again.
+if [ "$EFFECTIVE" -eq 0 ]; then
+  log "Cerbos watcher hasn't picked up the policy (expected on macOS Docker Desktop); restarting Cerbos to re-read /policies ..."
+  docker compose restart cerbos >/dev/null 2>&1 || true
+  wait_for_http "$CERBOS_HTTP_URL/_cerbos/health" "cerbos"
+  for _ in $(seq 1 30); do
+    if policy_effective; then EFFECTIVE=1; break; fi
+    sleep 1
+  done
+fi
+
+if [ "$EFFECTIVE" -eq 1 ]; then
+  log "policy is EFFECTIVE in Cerbos"
+else
+  die "published policy did not become effective in Cerbos (see: docker compose logs cerbos)"
+fi
 
 cat <<DONE
 

@@ -35,4 +35,5 @@ apps/identity/keys/*.pem
 # tracked. (`git add -f` to override if ever needed.)
 deploy/cerbos/policies/*.yaml
 !deploy/cerbos/policies/_platform_*.yaml
-!deploy/cerbos/policies/example_compiled_*.yaml
+# (Reference example policies live in deploy/cerbos/examples/, NOT here — they
+#  must not be loaded by Cerbos: their ids collide with the runtime-published rules.)
