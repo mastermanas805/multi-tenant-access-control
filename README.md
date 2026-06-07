@@ -8,6 +8,7 @@ Enterprise-grade **authorization system** design for a multi-tenant, microservic
 
 > 📄 **Full design document: [DESIGN.md](./DESIGN.md)**
 > 🚀 **Run it locally: [RUNNING.md](./RUNNING.md)** — `docker compose up` → `./scripts/bootstrap.sh` → demo.
+> 🧪 **Drive the API: [API_PLAYBOOK.md](./API_PLAYBOOK.md)** — Swagger UI, a [Postman collection](./postman/), and copy-paste curl recipes for every flow.
 
 ## What this is
 
